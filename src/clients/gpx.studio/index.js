@@ -21,7 +21,7 @@ async function applyOverlays(layerPresets, authenticated, version) {
       id: config.id,
       name: config.name,
       tileUrls: [config.template],
-      maxZoom: config.zoomExtent,
+      maxZoom: config.zoomExtent[1],
     };
     
     window.gpxstudio.addOrUpdateOverlay(overlay);

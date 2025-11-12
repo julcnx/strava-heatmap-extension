@@ -32,7 +32,7 @@
       "all_frames": true
     },
     {
-      "matches": ["https://www.openstreetmap.org/id*", "https://gpx.studio/app*"],
+      "matches": ["https://www.openstreetmap.org/id*", "https://gpx.studio/app*", "https://gpx.studio/*/app*"],
       "js": [
         "lib/browser-polyfill.min.js",
         "src/content/inject-client.js",

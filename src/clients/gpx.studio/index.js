@@ -1,19 +1,14 @@
 import { setupAuthStatusChangeListener } from '../common/auth.js';
 import { parseLayerPresets, setupLayerPresetsChangeListener, getLayerConfigs } from '../common/layers.js';
 
-const OVERLAY_PREFIX = 'strava-heatmap-';
-
 async function applyOverlays(layerPresets, authenticated, version) {
   console.log('[StravaHeatmapExt] Applying overlays to gpx.studio', { layerPresets, authenticated });
 
-  // Wait for gpx.studio to be loaded
   await window.gpxstudio.ensureLoaded();
 
-  // Remove all existing Strava overlays
-  await window.gpxstudio.removeOverlaysWithPrefix(OVERLAY_PREFIX);
-
-  // Get layer configurations
   const layerConfigs = getLayerConfigs(layerPresets, authenticated, version);
+
+  window.gpxstudio.filterOverlays(layerConfigs.map((config) => config.id));
 
   // Add each layer as an overlay
   for (const config of layerConfigs) {

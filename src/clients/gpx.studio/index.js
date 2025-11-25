@@ -1,18 +1,28 @@
 import { setupAuthStatusChangeListener } from '../common/auth.js';
 import { parseLayerPresets, setupLayerPresetsChangeListener, getLayerConfigs } from '../common/layers.js';
 
+async function waitForGpxStudio(maxAttempts = 50, interval = 100) {
+  for (let i = 0; i < maxAttempts; i++) {
+    if (window.gpxstudio && typeof window.gpxstudio.ensureLoaded === 'function') {
+      console.log('[StravaHeatmapExt] gpx.studio API detected');
+      return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, interval));
+  }
+  throw new Error('[StravaHeatmapExt] Timeout waiting for gpx.studio API');
+}
+
 async function applyOverlays(layerPresets, authenticated, version) {
   console.log('[StravaHeatmapExt] Applying overlays to gpx.studio', { layerPresets, authenticated });
 
-  await window.gpxstudio.ensureLoaded();
-
-  const layerConfigs = getLayerConfigs(layerPresets, authenticated, version);
+  const layerConfigs = getLayerConfigs(layerPresets, authenticated, version, true);
 
   window.gpxstudio.filterOverlays(layerConfigs.map((config) => config.id));
 
   // Add each layer as an overlay
   for (const config of layerConfigs) {
     const overlay = {
+      extensionName: "Strava Heatmap",
       id: config.id,
       name: config.name,
       tileUrls: [config.template],
@@ -22,6 +32,8 @@ async function applyOverlays(layerPresets, authenticated, version) {
     window.gpxstudio.addOrUpdateOverlay(overlay);
     console.log('[StravaHeatmapExt] Added overlay:', overlay);
   }
+
+  window.gpxstudio.updateOverlaysOrder(layerConfigs.map((config) => config.id));
 
   console.log('[StravaHeatmapExt] Successfully applied overlays to gpx.studio');
 }
@@ -40,22 +52,32 @@ async function main() {
     layerPresets,
   });
 
-  // Apply initial overlays
-  await applyOverlays(layerPresets, authenticated, version);
+  try {
+    // Wait for gpx.studio API to be available
+    await waitForGpxStudio();
 
-  // Listen for authentication status changes
-  setupAuthStatusChangeListener(async (newAuthenticated) => {
-    console.log('[StravaHeatmapExt] Authentication status changed:', newAuthenticated);
-    authenticated = newAuthenticated;
-    await applyOverlays(layerPresets, authenticated, version);
-  });
+    // Wait until UI is loaded
+    await window.gpxstudio.ensureLoaded();
 
-  // Listen for layer preset changes
-  setupLayerPresetsChangeListener(async (layers) => {
-    console.log('[StravaHeatmapExt] Layer presets changed:', layers);
-    layerPresets = parseLayerPresets(layers);
+    // Apply initial overlays
     await applyOverlays(layerPresets, authenticated, version);
-  });
+
+    // Listen for authentication status changes
+    setupAuthStatusChangeListener(async (newAuthenticated) => {
+      console.log('[StravaHeatmapExt] Authentication status changed:', newAuthenticated);
+      authenticated = newAuthenticated;
+      await applyOverlays(layerPresets, authenticated, version);
+    });
+
+    // Listen for layer preset changes
+    setupLayerPresetsChangeListener(async (layers) => {
+      console.log('[StravaHeatmapExt] Layer presets changed:', layers);
+      layerPresets = parseLayerPresets(layers);
+      await applyOverlays(layerPresets, authenticated, version);
+    });
+  } catch (error) {
+    console.error('[StravaHeatmapExt] Failed to initialize gpx.studio integration:', error);
+  }
 }
 
 main();

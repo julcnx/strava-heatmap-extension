@@ -74,7 +74,8 @@
     },
     {
       "resources": [
-        "src/clients/gpx.studio/index.js"
+        "src/clients/gpx.studio/index.js",
+        "src/clients/gpx.studio/index.css"
       ],
       "matches": ["*://gpx.studio/*"]
     }

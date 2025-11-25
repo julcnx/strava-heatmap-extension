@@ -89,13 +89,13 @@ function formatLayerColor(value) {
 }
 
 // Creates a layer configuration object
-function getLayerConfig(position, activity, color, timestamp, authenticated, version) {
+function getLayerConfig(position, activity, color, timestamp, authenticated, version, short) {
   const activityName = ACTIVITIES[activity];
   const [colorEmoji] = COLORS[color] || '❓';
 
   return {
     id: `strava-heatmap-${activity}`,
-    name: `${new Array(position).join('󠀠')}${colorEmoji} Strava Heatmap ${activityName}`,
+    name: `${new Array(position).join('󠀠')}${colorEmoji}${short ? '': ' Strava Heatmap'} ${activityName}`,
     description: `Shows ${activityName.toLowerCase()} aggregated, public Strava activities over the last year in ${colorEmoji} color.`,
     template: authenticated
       ? `https://content-a.strava.com/identified/globalheat/${activity}/${color}/{z}/{x}/{y}.png?v=19&t=${timestamp}`
@@ -105,11 +105,11 @@ function getLayerConfig(position, activity, color, timestamp, authenticated, ver
 }
 
 // Generates layer options with optional callback for extension
-export function getLayerConfigs(layerPresets, authenticated, version) {
+export function getLayerConfigs(layerPresets, authenticated, version, short = false) {
   const timestamp = Date.now().toString();
 
   return layerPresets.map(({ activity, color }, index) =>
-    getLayerConfig(index + 1, activity, color, timestamp, authenticated, version)
+    getLayerConfig(index + 1, activity, color, timestamp, authenticated, version, short)
   );
 }
 

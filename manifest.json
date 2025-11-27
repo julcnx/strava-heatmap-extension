@@ -12,7 +12,11 @@
     "storage",
     "webRequest"
   ],
-  "host_permissions": ["*://*.strava.com/*", "*://www.openstreetmap.org/*"],
+  "host_permissions": [
+    "*://*.strava.com/*",
+    "*://www.openstreetmap.org/*",
+    "*://gpx.studio/*"
+  ],
   "action": {
     "default_popup": ""
   },
@@ -28,7 +32,7 @@
       "all_frames": true
     },
     {
-      "matches": ["https://www.openstreetmap.org/id*"],
+      "matches": ["https://www.openstreetmap.org/id*", "https://gpx.studio/app*", "https://gpx.studio/*/app*"],
       "js": [
         "lib/browser-polyfill.min.js",
         "src/content/inject-client.js",
@@ -55,7 +59,7 @@
         "src/clients/common/hash.js",
         "src/clients/common/layers.js"
       ],
-      "matches": ["*://www.openstreetmap.org/*"]
+      "matches": ["*://www.openstreetmap.org/*", "*://gpx.studio/*"]
     },
     {
       "resources": [
@@ -67,6 +71,13 @@
         "src/clients/www.openstreetmap.org/start.js"
       ],
       "matches": ["*://www.openstreetmap.org/*"]
+    },
+    {
+      "resources": [
+        "src/clients/gpx.studio/index.js",
+        "src/clients/gpx.studio/index.css"
+      ],
+      "matches": ["*://gpx.studio/*"]
     }
   ],
   "icons": {

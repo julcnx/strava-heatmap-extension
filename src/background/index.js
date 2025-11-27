@@ -69,7 +69,7 @@ async function onTileExpired(tabId, url, reason) {
 }
 
 async function onTileFallback(tabId, url, reason) {
-  console.debug('[StravaHeatmapExt] Detected tile fallback:', tabId, url, reason);
+  console.log('[StravaHeatmapExt] Detected tile fallback:', tabId, url, reason);
   await showLoginPrompt(tabId);
 }
 
@@ -82,7 +82,7 @@ async function main() {
 
   watchTiles(
     onTileExpired,
-    ['*://*.strava.com/identified/globalheat/*/*/*.png*'],
+    ['*://*.strava.com/identified/globalheat/*/*/*/*/*.png*'],
     [403, 'net::ERR_BLOCKED_BY_ORB', 'NS_BINDING_ABORTED'],
     10000
   );

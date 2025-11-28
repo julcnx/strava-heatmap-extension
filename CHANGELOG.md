@@ -2,6 +2,10 @@
 
 ## Versions
 
+### `0.13.1` (2025-11-28)
+
+- [gpx.studio] Fixed SPA navigation to “/app” that blocked browser from re-injecting content scripts.
+
 ### `0.13.0` (2025-11-28)
 
 - [gpx.studio] Initial integration.

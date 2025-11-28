@@ -17,21 +17,23 @@ If you don’t already have a Strava account, you’ll need to create one (free)
 
 ### Chrome
 
-1. Open the [Chrome extension page](https://chrome.google.com/webstore/detail/eglbcifjafncknmpmnelckombmgddlco) for the extension.
-2. Click `Add to Chrome`.
-3. Confirm permissions by selecting `Add extension`.
-4. Chrome will briefly display a popup and show the new extension icon in the top-right toolbar.
-5. Right-click the extension icon and choose `Pin` to keep it visible.
-6. Alternatively, open the puzzle-piece Extensions menu and click the 📌 next to Strava Heatmap extension.
+Open the [Chrome extension page](https://chrome.google.com/webstore/detail/eglbcifjafncknmpmnelckombmgddlco) for the extension.
+
+1. Click `Add to Chrome`.
+2. Confirm permissions by selecting `Add extension`.
+3. Chrome will briefly display a popup and show the new extension icon in the top-right toolbar.
+4. Right-click the extension icon and choose `Pin` to keep it visible.
+5. Alternatively, open the puzzle-piece Extensions menu and click the 📌 next to Strava Heatmap extension.
 
 ### Firefox
 
-1. Open the [Firefox add-on](https://addons.mozilla.org/en-US/firefox/addon/strava-heatmap/) for the extension.
-2. Click `Add to Firefox`.
-3. Confirm permissions by selecting `Add`.
-4. Chrome will briefly display a popup and show the new extension icon in the top-right toolbar.
-5. Make sure `Pin extension to toolbar` is selected and click `OK`.
-6. Alternatively, right-click the extension icon and choose `Pin` to keep it visible.
+Open the [Firefox add-on](https://addons.mozilla.org/en-US/firefox/addon/strava-heatmap/) for the extension.
+
+1. Click `Add to Firefox`.
+2. Confirm permissions by selecting `Add`.
+3. Chrome will briefly display a popup and show the new extension icon in the top-right toolbar.
+4. Make sure `Pin extension to toolbar` is selected and click `OK`.
+5. Alternatively, right-click the extension icon and choose `Pin` to keep it visible.
 
 ### Versions
 

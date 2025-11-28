@@ -12,7 +12,7 @@ const CONTEXT_MENU_ITEMS = [
     title: 'Submit Issue',
     action: () =>
       browser.tabs.create({
-        url: 'https://github.com/cmoffroad/id-strava-heatmap-extension/issues/',
+        url: 'https://github.com/julcnx/strava-heatmap-extension/issues/',
       }),
   },
 ];

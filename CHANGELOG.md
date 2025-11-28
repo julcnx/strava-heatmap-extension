@@ -2,23 +2,28 @@
 
 ## Versions
 
+### `0.13.0` (2025-11-28)
+
+- [gpx.studio] Initial integration.
+- Generalize the extension by removing all iD-specific references from the manifest, package, and documentation.
+
 ### `0.12.2` (2025-08-04)
 
-- Fix crash when pressing Shift+W while drawing geometries
+- [iD] Fix crash when pressing Shift+W while drawing geometries.
 
 ### `0.12.1` (2025-07-22)
 
-- Ensure the restore unsaved changes prompt appears after reload
-- Maintain non-Strava layers above Strava layers
+- [iD] Ensure the restore unsaved changes prompt appears after reload.
+- [iD] Maintain non-Strava layers above Strava layers.
 
 ### `0.12.0` (2025-05-23)
 
-- Preserve layer stacking order based on the popup configuration
-- Add the Shift+Q shortcut to the keyboard shortcuts help panel
+- [iD] Preserve layer stacking order based on the popup configuration.
+- [iD] Add the Shift+Q shortcut to the keyboard shortcuts help panel.
 
 ### `0.11.1` (2025-05-19)
 
-- Fixed selection of previously used overlays.
+- [iD] Fixed selection of previously used overlays.
 
 ### `0.11.0` (2025-05-12)
 
@@ -27,7 +32,7 @@
 
 ### `0.10.1` (2025-05-07)
 
-- Fixed Shift+Q overlay toggle keyboard shorcut conflicting with area squaring.
+- [iD] Fixed Shift+Q overlay toggle keyboard shorcut conflicting with area squaring.
 
 ### `0.10.0` (2025-04-24)
 
@@ -52,8 +57,3 @@
 
 - Added support for right-click context menus, providing quick access to useful links
 - Enabled notifications upon installation and update of the extension
-
-## Latest Available Version
-
-- Chrome: `0.9.3`
-- Firefox: `0.9.3`

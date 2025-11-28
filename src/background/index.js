@@ -89,7 +89,7 @@ async function main() {
   watchTiles(
     onTileFallback,
     [
-      'https://raw.githubusercontent.com/cmoffroad/id-strava-heatmap-extension/refs/heads/*/assets/heatmap-fallback.png*',
+      'https://raw.githubusercontent.com/julcnx/strava-heatmap-extension/refs/heads/*/assets/heatmap-fallback.png*',
     ],
     [200, 304],
     30000

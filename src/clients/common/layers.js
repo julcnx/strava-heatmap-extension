@@ -89,17 +89,27 @@ function formatLayerColor(value) {
 }
 
 // Creates a layer configuration object
-function getLayerConfig(position, activity, color, timestamp, authenticated, version, short) {
+function getLayerConfig(
+  position,
+  activity,
+  color,
+  timestamp,
+  authenticated,
+  version,
+  short
+) {
   const activityName = ACTIVITIES[activity];
   const [colorEmoji] = COLORS[color] || '❓';
 
   return {
     id: `strava-heatmap-${activity}`,
-    name: `${new Array(position).join('󠀠')}${colorEmoji}${short ? '': ' Strava Heatmap'} ${activityName}`,
+    name: `${new Array(position).join('󠀠')}${colorEmoji}${
+      short ? activityName : `Strava Heatmap ${activityName}`
+    }`,
     description: `Shows ${activityName.toLowerCase()} aggregated, public Strava activities over the last year in ${colorEmoji} color.`,
     template: authenticated
       ? `https://content-a.strava.com/identified/globalheat/${activity}/${color}/{z}/{x}/{y}.png?v=19&t=${timestamp}`
-      : `https://raw.githubusercontent.com/cmoffroad/id-strava-heatmap-extension/refs/heads/v${version}/assets/heatmap-fallback.png?v=1&z={z}&x={x}&y={y}`,
+      : `https://raw.githubusercontent.com/julcnx/strava-heatmap-extension/refs/heads/v${version}/assets/heatmap-fallback.png?v=1&z={z}&x={x}&y={y}`,
     zoomExtent: authenticated ? [0, 15] : [0, 20],
   };
 }

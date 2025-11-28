@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "iD Strava Heatmap",
-  "description": "Easily overlay the Strava Global Heatmap in your iD editor and gain valuable insights into popular routes and activity patterns.",
-  "version": "0.12.2",
-  "homepage_url": "https://github.com/cmoffroad/id-strava-heatmap-extension",
+  "name": "Strava Heatmap",
+  "description": "Easily overlay the Strava Global Heatmap in your OpenStreetMap iD and GPX.studio editors and and gain valuable insights into popular routes and activity patterns.",
+  "version": "0.13.0",
+  "homepage_url": "https://github.com/julcnx/strava-heatmap-extension",
   "permissions": [
     "cookies",
     "contextMenus",
@@ -32,7 +32,11 @@
       "all_frames": true
     },
     {
-      "matches": ["https://www.openstreetmap.org/id*", "https://gpx.studio/app*", "https://gpx.studio/*/app*"],
+      "matches": [
+        "https://www.openstreetmap.org/id*",
+        "https://gpx.studio/app*",
+        "https://gpx.studio/*/app*"
+      ],
       "js": [
         "lib/browser-polyfill.min.js",
         "src/content/inject-client.js",

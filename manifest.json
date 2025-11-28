@@ -32,6 +32,12 @@
       "all_frames": true
     },
     {
+      "matches": ["https://gpx.studio/*"],
+      "js": ["src/clients/gpx.studio/start.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
       "matches": [
         "https://www.openstreetmap.org/id*",
         "https://gpx.studio/app*",
@@ -79,7 +85,8 @@
     {
       "resources": [
         "src/clients/gpx.studio/index.js",
-        "src/clients/gpx.studio/index.css"
+        "src/clients/gpx.studio/index.css",
+        "src/clients/gpx.studio/start.js"
       ],
       "matches": ["*://gpx.studio/*"]
     }

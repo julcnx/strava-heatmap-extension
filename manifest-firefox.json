@@ -5,7 +5,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "strava-heatmap-extension@julcnx",
+      "id": "id-strava-heatmap-extension@julcnx",
       "strict_min_version": "113.0"
     }
   },

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Strava Heatmap",
-  "description": "Easily overlay the Strava Global Heatmap in your OpenStreetMap iD and GPX.studio editors and and gain valuable insights into popular routes and activity patterns.",
-  "version": "0.13.1",
+  "description": "Easily overlay the Strava Global Heatmap in your OpenStreetMap iD and GPX.studio editors and gain valuable insights into popular routes and activity patterns.",
+  "version": "0.13.2",
   "homepage_url": "https://github.com/julcnx/strava-heatmap-extension",
   "permissions": [
     "cookies",
@@ -13,7 +13,8 @@
     "webRequest"
   ],
   "host_permissions": [
-    "*://*.strava.com/*",
+    "*://www.strava.com/*",
+    "*://content-a.strava.com/*",
     "*://www.openstreetmap.org/*",
     "*://gpx.studio/*"
   ],
@@ -26,22 +27,16 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.openstreetmap.org/id*"],
+      "matches": ["*://www.openstreetmap.org/id*"],
       "js": ["src/clients/www.openstreetmap.org/start.js"],
       "run_at": "document_start",
       "all_frames": true
     },
     {
-      "matches": ["https://gpx.studio/*"],
-      "js": ["src/clients/gpx.studio/start.js"],
-      "run_at": "document_start",
-      "all_frames": true
-    },
-    {
       "matches": [
-        "https://www.openstreetmap.org/id*",
-        "https://gpx.studio/app*",
-        "https://gpx.studio/*/app*"
+        "*://www.openstreetmap.org/id*",
+        "*://gpx.studio/app*",
+        "*://gpx.studio/*/app*"
       ],
       "js": [
         "lib/browser-polyfill.min.js",
@@ -52,12 +47,12 @@
       "all_frames": true
     },
     {
-      "matches": ["https://www.strava.com/dashboard*"],
+      "matches": ["*://www.strava.com/dashboard*"],
       "js": ["src/content/strava-dashboard.js"],
       "run_at": "document_start"
     },
     {
-      "matches": ["https://www.strava.com/maps/global-heatmap*"],
+      "matches": ["*://www.strava.com/maps/global-heatmap*"],
       "js": ["lib/browser-polyfill.min.js", "src/content/strava-heatmap.js"],
       "run_at": "document_idle"
     }
@@ -85,8 +80,7 @@
     {
       "resources": [
         "src/clients/gpx.studio/index.js",
-        "src/clients/gpx.studio/index.css",
-        "src/clients/gpx.studio/start.js"
+        "src/clients/gpx.studio/index.css"
       ],
       "matches": ["*://gpx.studio/*"]
     }

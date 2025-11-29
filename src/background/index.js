@@ -8,6 +8,7 @@ import {
 } from './credentials.js';
 import { showInstalledNotification } from './installs.js';
 import { resetLayerPresets } from './layers.js';
+import { checkPermissions } from './permissions.js';
 import { redirectComplete, openLogin } from './tabs.js';
 import { watchTiles } from './tiles.js';
 
@@ -29,6 +30,7 @@ async function onMessage(message, sender) {
 }
 
 async function onStartup() {
+  await checkPermissions();
   await resetLayerPresets();
   await createContextMenu();
   await requestCredentials();
@@ -40,6 +42,8 @@ async function onInstalled({ reason }) {
 }
 
 async function onActionClicked(tab) {
+  await checkPermissions();
+
   const { credentials } = await browser.storage.local.get('credentials');
   if (credentials) {
     // do nothing for now, later will open settings popup

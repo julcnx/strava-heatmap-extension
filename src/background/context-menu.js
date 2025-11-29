@@ -1,19 +1,8 @@
 const CONTEXT_MENU_ITEMS = [
   {
-    id: 'forumSupport',
-    title: 'Forum Support',
-    action: () =>
-      browser.tabs.create({
-        url: 'https://community.openstreetmap.org/t/new-strava-heatmap-extension-for-id/100544',
-      }),
-  },
-  {
-    id: 'submitIssue',
-    title: 'Submit Issue',
-    action: () =>
-      browser.tabs.create({
-        url: 'https://github.com/julcnx/strava-heatmap-extension/issues/',
-      }),
+    id: 'about',
+    title: 'About Extension',
+    action: () => browser.tabs.create({ url: `src/about/index.html` }),
   },
 ];
 

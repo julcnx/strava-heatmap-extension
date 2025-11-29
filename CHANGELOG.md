@@ -4,6 +4,8 @@
 
 ### `0.13.2` (2025-11-29)
 
+- Setup About page to display on installation, after updates, and via the context menu.
+- Added a permissions check and notify the user if any required permissions are missing.
 - [gpx.studio] Disabled SPA navigation workaround after GPX.studio update.
 
 ### `0.13.1` (2025-11-28)

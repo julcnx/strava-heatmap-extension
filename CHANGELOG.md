@@ -2,6 +2,10 @@
 
 ## Versions
 
+### `0.13.2` (2025-11-29)
+
+- [gpx.studio] Disabled SPA navigation workaround after GPX.studio update.
+
 ### `0.13.1` (2025-11-28)
 
 - [gpx.studio] Fixed SPA navigation to “/app” that blocked browser from re-injecting content scripts.

@@ -103,7 +103,7 @@ function getLayerConfig(
 
   return {
     id: `strava-heatmap-${activity}`,
-    name: `${new Array(position).join('󠀠')}${colorEmoji}${
+    name: `${new Array(position).join('󠀠')}${colorEmoji} ${
       short ? activityName : `Strava Heatmap ${activityName}`
     }`,
     description: `Shows ${activityName.toLowerCase()} aggregated, public Strava activities over the last year in ${colorEmoji} color.`,

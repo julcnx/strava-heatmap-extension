@@ -29,6 +29,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.getElementById('message').innerHTML = message;
 
+  // Update version-dependent links
+  const readmeLink = document.querySelector('a[href*="#readme"]');
+  if (readmeLink) {
+    readmeLink.href = `https://github.com/julcnx/strava-heatmap-extension/blob/v${version}/README.md`;
+  }
+
+  const changelogLink = document.querySelector('a[href*="#changelog"]');
+  if (changelogLink) {
+    changelogLink.href = `https://github.com/julcnx/strava-heatmap-extension/blob/v${version}/CHANGELOG.md`;
+  }
+
   // Set store URL based on browser
   const storeUrl = isFirefox() ? STORE_URLS.firefox : STORE_URLS.chrome;
   const rateLink = document.querySelector('.actions a[href="#rate"]');

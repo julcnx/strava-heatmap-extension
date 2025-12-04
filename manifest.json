@@ -56,6 +56,11 @@
       "matches": ["*://www.strava.com/maps/global-heatmap*"],
       "js": ["lib/browser-polyfill.min.js", "src/content/strava-heatmap.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://www.strava.com/logout*", "https://www.strava.com/"],
+      "js": ["lib/browser-polyfill.min.js", "src/content/strava-logout.js"],
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [

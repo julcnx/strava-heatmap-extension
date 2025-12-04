@@ -35,7 +35,7 @@
           return;
         }
 
-        console.warn('[StravaHeatmapExt] Strava tile failed to load:', target.src);
+        console.log('[StravaHeatmapExt] Strava tile failed to load:', target.src);
 
         // Check the actual status code
         const status = await checkTileStatus(target.src);
@@ -45,7 +45,7 @@
         if (status === 403 || status === 401 || status === 'NETWORK_ERROR') {
           lastErrorTime = now;
 
-          console.warn('[StravaHeatmapExt] Auth or network error detected:', status);
+          console.log('[StravaHeatmapExt] Auth or network error detected:', status);
 
           try {
             // Request credential re-validation (will clear expired credentials)

@@ -98,31 +98,6 @@ function convertJxonToGpx(jxon) {
 </gpx>`;
 }
 
-async function reorderOverlaysHash(background, hashValue) {
-  const imagery = await background.ensureLoaded();
-
-  // Get the preferred Strava layer order from background sources
-  const stravaLayerIds = imagery.backgrounds
-    .filter((b) => b.id.startsWith('strava-heatmap-'))
-    .map((b) => b.id)
-    .reverse();
-
-  // Convert input value to array
-  const inputIds = hashValue.split(',').filter(Boolean);
-
-  // Separate Strava and non-Strava layers
-  const stravaInInput = inputIds.filter((id) => stravaLayerIds.includes(id));
-  const others = inputIds.filter((id) => !stravaLayerIds.includes(id));
-
-  // Reorder Strava layers based on the predefined order
-  const sortedStrava = stravaLayerIds.filter((id) => stravaInInput.includes(id));
-
-  // Combine: sorted Strava layers then others last (non-Strava)
-  const reordered = [...sortedStrava, ...others];
-
-  return reordered.join(',');
-}
-
 export async function setupOverlaysListeners(context) {
   document.addEventListener('change', async (event) => {
     const target = event.target;
@@ -136,7 +111,6 @@ export async function setupOverlaysListeners(context) {
       // Save the current overlay state (or empty string if none)
       const hashParams = getHashParams(location);
       const newValue = hashParams.get('overlays') ?? '';
-      await adjustOverlaysOrder(context.background(), newValue, true);
 
       // Save the last used overlays in local storage
       localStorage.setItem(storageKeyLastUsed, newValue);
@@ -148,32 +122,6 @@ export async function setupOverlaysListeners(context) {
   updateOverlaySummary();
 
   await injectOverlaysShortcuts();
-}
-
-export async function adjustOverlaysOrder(background, newValue, reset) {
-  const adjustedValue = await reorderOverlaysHash(background, newValue);
-
-  if (adjustedValue === newValue) return;
-
-  if (reset) {
-    background
-      .overlayLayerSources()
-      .forEach((layer) => background.toggleOverlayLayer(layer));
-  }
-
-  adjustedValue
-    .split(',')
-    .filter(Boolean)
-    .forEach((id) => {
-      const source = background.findSource(id);
-      if (source) {
-        background.toggleOverlayLayer(source);
-      } else {
-        console.warn(
-          `[StravaHeatmapExt] Missing overlay source for initialization: ${id}`
-        );
-      }
-    });
 }
 
 export function getDefaultOverlaysHash() {
@@ -243,4 +191,24 @@ export async function injectOverlaysShortcuts() {
   ];
 
   rows.splice(targetIndex, 1, ...customShortcuts);
+}
+
+export function restoreOverlays(background, overlaysValue) {
+  // Turn off all current overlays
+  background
+    .overlayLayerSources()
+    .forEach((layer) => background.toggleOverlayLayer(layer));
+
+  // Turn on the ones from the value
+  overlaysValue
+    .split(',')
+    .filter(Boolean)
+    .forEach((id) => {
+      const source = background.findSource(id);
+      if (source) {
+        background.toggleOverlayLayer(source);
+      } else {
+        console.warn(`[StravaHeatmapExt] Missing overlay source for restoration: ${id}`);
+      }
+    });
 }

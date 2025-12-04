@@ -1,6 +1,6 @@
 import { getLayerConfigs } from '../common/layers.js';
 import {
-  adjustOverlaysOrder,
+  restoreOverlays,
   bindOverlaysShortcuts,
   getDefaultOverlaysHash,
 } from './overlays.js';
@@ -9,6 +9,9 @@ export async function applyImagery(context, layerPresets, authenticated, version
   const stravaConfigs = getLayerConfigs(layerPresets, authenticated, version);
   const background = context.background();
   const imagery = await background.ensureLoaded();
+
+  // remember layer selection
+  const defaultOverlaysHash = getDefaultOverlaysHash();
 
   // toggle off all layers
   background
@@ -34,14 +37,13 @@ export async function applyImagery(context, layerPresets, authenticated, version
   // update background sources
   await background.init();
 
-  // re-toggle selected overlays
-  const defaultOverlaysHash = getDefaultOverlaysHash();
-  await adjustOverlaysOrder(background, defaultOverlaysHash, false);
-
-  // redraw ui
+  // rebuild UI
   if (!context.history().hasRestorableChanges()) {
     await context.ui().restart();
   }
+
+  // re-toggle selected overlays
+  restoreOverlays(background, defaultOverlaysHash);
 
   // ensure overlay shortcuts are re-binded
   bindOverlaysShortcuts(context);

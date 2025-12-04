@@ -1,5 +1,6 @@
 import { clearCookies, fetchCookies } from './cookies.js';
 import { updateHeatmapRules } from './rules.js';
+import { updateContextMenuAuth } from './context-menu.js';
 
 const STRAVA_COOKIE_URL = 'https://www.strava.com';
 const STRAVA_COOKIE_NAMES = [
@@ -92,15 +93,22 @@ export async function expireCredentials() {
 
 async function updateActionIcon(authenticated) {
   const title = authenticated
-    ? '🟢 Strava Heatmap ON:\n\nEnable an overlay to view it.'
-    : `🔴 Strava Heatmap OFF:\n\nClick here to log into Strava and view the heatmap.`;
+    ? 'Strava Heatmap - Active\n\nClick to configure layers'
+    : 'Strava Heatmap - Sign in required\n\nClick to authenticate with Strava';
 
-  const color = authenticated ? 'green' : 'red';
-  const text = '󠀠';
+  const iconPath = authenticated
+    ? { 48: '/icons/icon-48.png', 128: '/icons/icon-128.png' }
+    : { 48: '/icons/icon-48-grayscale.png', 128: '/icons/icon-128-grayscale.png' };
 
   await browser.action.setTitle({ title });
-  await browser.action.setBadgeBackgroundColor({ color });
-  await browser.action.setBadgeText({ text });
+  await browser.action.setIcon({ path: iconPath });
+
+  if (!authenticated) {
+    await browser.action.setBadgeText({ text: '!' });
+    await browser.action.setBadgeBackgroundColor({ color: '#dc3545' });
+  } else {
+    await browser.action.setBadgeText({ text: '' });
+  }
 
   if (authenticated) {
     await browser.action.setPopup({
@@ -109,4 +117,7 @@ async function updateActionIcon(authenticated) {
   } else {
     await browser.action.setPopup({ popup: '' });
   }
+
+  // Update context menu state
+  await updateContextMenuAuth(authenticated);
 }

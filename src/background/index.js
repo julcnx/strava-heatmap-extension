@@ -1,6 +1,10 @@
 import '../../lib/browser-polyfill.min.js';
 
-import { createContextMenu, onContextMenuClicked } from './context-menu.js';
+import {
+  createContextMenu,
+  onContextMenuClicked,
+  updateContextMenuAuth,
+} from './context-menu.js';
 import {
   expireCredentials,
   requestCredentials,
@@ -44,6 +48,7 @@ async function onActionClicked(tab) {
   await checkPermissions();
 
   const { credentials } = await browser.storage.local.get('credentials');
+
   if (credentials) {
     // do nothing for now, later will open settings popup
   } else {

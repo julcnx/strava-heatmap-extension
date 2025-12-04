@@ -2,6 +2,14 @@
 
 ## Versions
 
+### `0.13.3` (2025-12-04)
+
+- [iD] Fix issue where overlays were not automatically reselected after a refresh or update
+- Enhance badge icon and context menus
+- Add notifications to improve workflow
+- Improve appearance of the About page
+- Reset credentials automatically on Strava logout
+
 ### `0.13.2` (2025-11-29)
 
 - Setup About page to display on installation, after updates, and via the context menu.

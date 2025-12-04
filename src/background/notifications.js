@@ -6,7 +6,6 @@ export async function showNotification(options) {
     autoCloseDelay = 5000,
     buttons = [],
     onClick = null,
-    requireInteraction = false,
   } = options;
 
   const iconUrl = iconGray ? '/icons/icon-128-grayscale.png' : '/icons/icon-128.png';
@@ -16,8 +15,11 @@ export async function showNotification(options) {
     iconUrl,
     title: 'Strava Heatmap',
     message,
-    requireInteraction,
   };
+
+  // Firefox doesn't support requireInteraction, so we skip it entirely
+  // Chrome supports it, but we'll rely on autoClose behavior instead
+  // This keeps notifications consistent across browsers
 
   // Only add buttons if provided (not supported in all browsers)
   if (buttons.length > 0) {

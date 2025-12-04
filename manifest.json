@@ -41,7 +41,8 @@
       "js": [
         "lib/browser-polyfill.min.js",
         "src/content/inject-client.js",
-        "src/content/watch-storage.js"
+        "src/content/watch-storage.js",
+        "src/content/watch-tile-errors.js"
       ],
       "run_at": "document_end",
       "all_frames": true

@@ -10,7 +10,6 @@ import { showInstalledNotification } from './installs.js';
 import { resetLayerPresets } from './layers.js';
 import { checkPermissions } from './permissions.js';
 import { redirectComplete, openLogin } from './tabs.js';
-import { watchTiles } from './tiles.js';
 
 async function onMessage(message, sender) {
   const MESSAGE_HANDLERS = {
@@ -52,52 +51,16 @@ async function onActionClicked(tab) {
   }
 }
 
-// disable for now as it can cause issues with popup display
-async function showLoginPrompt(tabId) {
-  // await browser.action.setPopup({
-  //   popup: `src/popups/error.html?tabId=${tabId}`,
-  //   tabId,
-  // });
-  // await browser.action.openPopup();
-}
-
-async function onTileExpired(tabId, url, reason) {
-  console.log(
-    '[StravaHeatmapExt] Detecting expired credentials, requesting new ones.',
-    tabId,
-    url,
-    reason
-  );
-  await requestCredentials();
-  await showLoginPrompt(tabId);
-}
-
-async function onTileFallback(tabId, url, reason) {
-  console.log('[StravaHeatmapExt] Detected tile fallback:', tabId, url, reason);
-  await showLoginPrompt(tabId);
-}
-
 async function main() {
+  console.log('[StravaHeatmapExt] Extension starting...');
+
   browser.action.onClicked.addListener(onActionClicked);
   browser.contextMenus.onClicked.addListener(onContextMenuClicked);
   browser.runtime.onMessage.addListener(onMessage);
   browser.runtime.onInstalled.addListener(onInstalled);
   browser.runtime.onStartup.addListener(onStartup);
 
-  watchTiles(
-    onTileExpired,
-    ['*://*.strava.com/identified/globalheat/*/*/*/*/*.png*'],
-    [403, 'net::ERR_BLOCKED_BY_ORB', 'NS_BINDING_ABORTED'],
-    10000
-  );
-  watchTiles(
-    onTileFallback,
-    [
-      'https://raw.githubusercontent.com/julcnx/strava-heatmap-extension/refs/heads/*/assets/heatmap-fallback.png*',
-    ],
-    [200, 304],
-    30000
-  );
+  console.log('[StravaHeatmapExt] Extension started successfully');
 }
 
 main();

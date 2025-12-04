@@ -72,13 +72,22 @@ export async function resetCredentials() {
 }
 
 export async function expireCredentials() {
-  const credentials =
-    '_strava_idcf=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3NDUxNDI3NjYsImlhdCI6MTc0NTA1NjM2NiwiYXRobGV0ZUlkIjo5OTcwODM1NSwidGltZXN0YW1wIjoxNzQ1MDU2MzY2fQ.cm-dbxMcuT6-nX8quL-5J0P6HdalxZp7yZxscf2T7MM; CloudFront-Key-Pair-Id=K3VK9UFQYD04PI; CloudFront-Policy=eyJTdGF0ZW1lbnQiOiBbeyJSZXNvdXJjZSI6Imh0dHBzOi8vKmNvbnRlbnQtKi5zdHJhdmEuY29tL2lkZW50aWZpZWQvKiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc0NTE0Mjc2Nn19fV19; CloudFront-Signature=Cc3~gm4FZxsm~nFuYzXqOibwSi4dPhseKq5hY3fkbGpXUcykPWD82u6CgPp3E9ZjHBz7Sdz0K2vdtup9Btf6FPPjH212TUw4XyYm14G9xSW5hDgDP-p4XTNL6-LXSobaO8Meri3WEAIXi9RezSVgsYS4r6M9OXXwYjFisq4kXfF6xbrPuUsK5mEqlFvBpDLYP84MkRsSMogD6SWY8gpD0wKWoZpgh03HyoyDmary7cgm6LXnTU9pjxcziM4OkMQ4Q-rBAGBRtwmhQ18mIzawTKjxLjytT621fRHUaSBUzmT1t2DTosxpiPlCw8EyUlczkWc5kxphwxgxpstqN7f9vg__';
+  // Set expired credentials (from a past date)
+  const expiredCredentials =
+    '_strava_idcf=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE2MDAwMDAwMDAsImlhdCI6MTYwMDAwMDAwMCwiYXRobGV0ZUlkIjo5OTk5OTk5OSwidGltZXN0YW1wIjoxNjAwMDAwMDAwfQ.invalid; CloudFront-Key-Pair-Id=INVALID; CloudFront-Policy=eyJTdGF0ZW1lbnQiOiBbeyJSZXNvdXJjZSI6Imh0dHBzOi8vKi5zdHJhdmEuY29tLyoiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE2MDAwMDAwMDB9fX1dfQ==; CloudFront-Signature=InvalidSignature';
+
   await clearCookies(STRAVA_COOKIE_URL, STRAVA_COOKIE_NAMES);
   await browser.storage.local.set({
-    credentials,
+    credentials: expiredCredentials,
   });
-  return requestCredentials(true);
+
+  console.debug('[StravaHeatmapExt] Expired credentials set');
+
+  // Update rules with expired credentials
+  await updateHeatmapRules(expiredCredentials);
+
+  // Force validation (which should fail with 403)
+  return requestCredentials(false); // Set to false to trigger validation
 }
 
 async function updateActionIcon(authenticated) {

@@ -9,7 +9,7 @@ const CONTEXT_MENU_ITEMS = [
     action: () => browser.tabs.create({ url: `src/about/index.html` }),
   },
   {
-    id: 'separator',
+    id: 'separator1',
     title: null,
   },
   {

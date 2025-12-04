@@ -1,10 +1,6 @@
 import '../../lib/browser-polyfill.min.js';
 
-import {
-  createContextMenu,
-  onContextMenuClicked,
-  updateContextMenuAuth,
-} from './context-menu.js';
+import { createContextMenu, onContextMenuClicked } from './context-menu.js';
 import {
   expireCredentials,
   requestCredentials,

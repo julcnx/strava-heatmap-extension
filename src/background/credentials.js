@@ -1,6 +1,7 @@
 import { clearCookies, fetchCookies } from './cookies.js';
 import { updateHeatmapRules } from './rules.js';
 import { updateContextMenuAuth } from './context-menu.js';
+import { showNotification } from './notifications.js';
 
 const STRAVA_COOKIE_URL = 'https://www.strava.com';
 const STRAVA_COOKIE_NAMES = [
@@ -56,20 +57,65 @@ export async function requestCredentials(skipValidation = false) {
     console.debug('[StravaHeatmapExt] Stored credentials updated', credentials);
   }
 
-  const authenticated = Boolean(credentials);
+  // Detect authentication state changes
+  const wasAuthenticated = Boolean(storedCredentials);
+  const nowAuthenticated = Boolean(credentials);
+
+  console.debug('[StravaHeatmapExt] Auth state:', {
+    wasAuthenticated,
+    nowAuthenticated,
+    storedCredentials: !!storedCredentials,
+    credentials: !!credentials,
+  });
+
+  const authenticated = nowAuthenticated;
   updateActionIcon(authenticated);
+
+  // Show notifications only when authentication state changed
+  if (wasAuthenticated && !nowAuthenticated) {
+    console.debug('[StravaHeatmapExt] Showing expired notification');
+    // Credentials expired or cleared
+    await showNotification({
+      message:
+        'Heatmap cookies have expired. Click the extension icon to reauthenticate.',
+      iconGray: true,
+    });
+  } else if (!wasAuthenticated && nowAuthenticated) {
+    console.debug('[StravaHeatmapExt] Showing success notification');
+    // Successfully authenticated
+    await showNotification({
+      message: 'Successfully authenticated! Heatmap layers are now available.',
+    });
+  }
 
   return authenticated;
 }
 
 export async function resetCredentials() {
+  // Get current state before clearing
+  const { credentials: storedCredentials } = await browser.storage.local.get(
+    'credentials'
+  );
+  const wasAuthenticated = Boolean(storedCredentials);
+
   await clearCookies(STRAVA_COOKIE_URL, STRAVA_COOKIE_NAMES);
   await browser.storage.local.set({
     credentials: null,
   });
   console.debug('[StravaHeatmapExt] Credentials cleared');
 
-  return requestCredentials(true);
+  const result = await requestCredentials(true);
+
+  // Show notification if we were authenticated
+  if (wasAuthenticated) {
+    await showNotification({
+      message:
+        'Heatmap cookies cleared. Click the extension icon to reauthenticate if needed.',
+      iconGray: true,
+    });
+  }
+
+  return result;
 }
 
 export async function expireCredentials() {

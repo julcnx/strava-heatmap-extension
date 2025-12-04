@@ -1,3 +1,5 @@
+import { showNotification } from './notifications.js';
+
 let authNotificationId = null;
 
 export async function redirectComplete(tabId, sender) {
@@ -27,12 +29,11 @@ export async function redirectComplete(tabId, sender) {
 
 export async function openLogin(tabId) {
   // Show notification
-  authNotificationId = await browser.notifications.create({
-    type: 'basic',
-    iconUrl: '/icons/icon-128-grayscale.png',
-    title: 'Strava Authentication',
+  authNotificationId = await showNotification({
     message:
       'Connecting to Strava... This tab will close automatically once fully authenticated.',
+    iconGray: true,
+    autoClose: false,
   });
 
   // Open Strava login

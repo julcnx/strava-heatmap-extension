@@ -14,9 +14,15 @@ function isFirefox() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  const version = browser.runtime.getManifest().version;
+  const manifest = browser.runtime.getManifest();
+  const version = manifest.version;
+  const name = manifest.name;
   const params = new URLSearchParams(window.location.search);
   const reason = params.get('reason');
+
+  // Set title and heading from manifest
+  document.getElementById('page-title').textContent = name;
+  document.getElementById('page-heading').textContent = name;
 
   // Set message
   let message = '';

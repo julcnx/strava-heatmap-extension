@@ -29,6 +29,11 @@ function cleanUp() {
   execSync(`cd ${DIST} && rm -rf ${MANIFEST} ${folders}`, { stdio: 'ignore' });
 }
 
+// Function to remove [DEV] suffix from name if present
+function getProductionName(name) {
+  return name.replace(/\s*\[DEV\]\s*$/, '').trim();
+}
+
 // Read the original manifest file
 const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf-8'));
 const { version } = manifest;
@@ -74,17 +79,21 @@ if (fs.existsSync(path.join(DIST, firefoxZip))) {
 // Copy shared files to dist folder
 copySharedFiles();
 
-// Create Chrome build
-const manifestChrome = { ...manifest };
+// Create Chrome build (remove [DEV] from name)
+const manifestChrome = {
+  ...manifest,
+  name: getProductionName(manifest.name),
+};
 createZip(chromeZip, manifestChrome);
 
-// Create Firefox build
+// Create Firefox build (remove [DEV] from name)
 const manifestFirefox = Object.fromEntries(
   Object.entries({
     ...manifest,
     ...JSON.parse(fs.readFileSync('manifest-firefox.json', 'utf-8')),
   }).filter(([, value]) => value !== null)
 );
+manifestFirefox.name = getProductionName(manifest.name);
 createZip(firefoxZip, manifestFirefox);
 
 // Clean up dist folder

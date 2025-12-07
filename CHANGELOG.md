@@ -2,6 +2,10 @@
 
 ## Versions
 
+### `0.13.4` (2025-12-07)
+
+- Enabled clickable notifications
+
 ### `0.13.3` (2025-12-04)
 
 - [iD] Fix issue where overlays were not automatically reselected after a refresh or update

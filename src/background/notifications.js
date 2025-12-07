@@ -30,13 +30,14 @@ export async function showNotification(options) {
 
   // Set up button click listener if callback provided
   if (onClick) {
-    const listener = (clickedNotificationId, buttonIndex) => {
+    const listener = (clickedNotificationId) => {
       if (clickedNotificationId === notificationId) {
-        onClick(buttonIndex);
-        browser.notifications.onButtonClicked.removeListener(listener);
+        onClick();
+        browser.notifications.clear(clickedNotificationId);
+        browser.notifications.onClicked.removeListener(listener);
       }
     };
-    browser.notifications.onButtonClicked.addListener(listener);
+    browser.notifications.onClicked.addListener(listener);
   }
 
   if (autoClose) {

@@ -2,6 +2,7 @@ import { clearCookies, fetchCookies } from './cookies.js';
 import { updateHeatmapRules } from './rules.js';
 import { updateContextMenuAuth } from './context-menu.js';
 import { showNotification } from './notifications.js';
+import { openLogin } from './tabs.js';
 
 const STRAVA_COOKIE_URL = 'https://www.strava.com';
 const STRAVA_COOKIE_NAMES = [
@@ -23,6 +24,14 @@ export async function validateCredentials() {
       resolve(error.name);
     }
   });
+}
+
+async function getCurrentTabId() {
+  const [currentTab] = await browser.tabs.query({
+    active: true,
+    currentWindow: true,
+  });
+  return currentTab.id;
 }
 
 export async function requestCredentials(skipValidation = false) {
@@ -79,12 +88,19 @@ export async function requestCredentials(skipValidation = false) {
       message:
         'Heatmap cookies have expired. Click the extension icon to reauthenticate.',
       iconGray: true,
+      onClick: async () => {
+        const currentTabId = await getCurrentTabId();
+        await openLogin(currentTabId);
+      },
     });
   } else if (!wasAuthenticated && nowAuthenticated) {
     console.debug('[StravaHeatmapExt] Showing success notification');
     // Successfully authenticated
     await showNotification({
       message: 'Successfully authenticated! Heatmap layers are now available.',
+      onClick: async () => {
+        await browser.action.openPopup();
+      },
     });
   }
 
@@ -112,6 +128,10 @@ export async function resetCredentials() {
       message:
         'Heatmap cookies cleared. Click the extension icon to reauthenticate if needed.',
       iconGray: true,
+      onClick: async () => {
+        const currentTabId = await getCurrentTabId();
+        await openLogin(currentTabId);
+      },
     });
   }
 

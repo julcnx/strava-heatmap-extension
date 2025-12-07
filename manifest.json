@@ -9,8 +9,7 @@
     "contextMenus",
     "declarativeNetRequest",
     "notifications",
-    "storage",
-    "webRequest"
+    "storage"
   ],
   "host_permissions": [
     "*://www.strava.com/*",

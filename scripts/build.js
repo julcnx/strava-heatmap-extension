@@ -41,39 +41,28 @@ const { version } = manifest;
 // Generate zip filenames
 const chromeZip = `${version}-chrome.zip`;
 const firefoxZip = `${version}-firefox.zip`;
+const chromeUnzipped = path.join(DIST, `${version}-chrome`);
 
-// Set up the CLI options
-const options = program
-  .option('-f, --force', 'Force recreate zip even if version already exists')
-  .parse(process.argv)
-  .opts();
+// Set up the CLI options (kept for future options)
+program.parse(process.argv);
 
 // make sure dist folder exists, if not create it
 if (!fs.existsSync(DIST)) {
   fs.mkdirSync(DIST);
 }
 
-// Check if version already exists
+// Remove existing zips (force by default)
 if (fs.existsSync(path.join(DIST, chromeZip))) {
-  if (options.force) {
-    fs.rmSync(path.join(DIST, chromeZip));
-  } else {
-    console.log(
-      `Chrome Version ${version} already exists - bump version first or use --force option.`
-    );
-    process.exit(1);
-  }
+  fs.rmSync(path.join(DIST, chromeZip));
 }
 
 if (fs.existsSync(path.join(DIST, firefoxZip))) {
-  if (options.force) {
-    fs.rmSync(path.join(DIST, firefoxZip));
-  } else {
-    console.log(
-      `Firefox Version ${version} already exists - bump version first or use --force option.`
-    );
-    process.exit(1);
-  }
+  fs.rmSync(path.join(DIST, firefoxZip));
+}
+
+// Remove existing unzipped Chrome folder
+if (fs.existsSync(chromeUnzipped)) {
+  fs.rmSync(chromeUnzipped, { recursive: true, force: true });
 }
 
 // Copy shared files to dist folder
@@ -96,7 +85,13 @@ const manifestFirefox = Object.fromEntries(
 manifestFirefox.name = getProductionName(manifest.name);
 createZip(firefoxZip, manifestFirefox);
 
+// Unzip Chrome version
+execSync(`cd ${DIST} && unzip -q ${chromeZip} -d ${version}-chrome`, {
+  stdio: 'ignore',
+});
+
 // Clean up dist folder
 cleanUp();
 
 console.log(`Chrome and Firefox v${version} builds created successfully!`);
+console.log(`Chrome build unzipped to: dist/${version}-chrome`);

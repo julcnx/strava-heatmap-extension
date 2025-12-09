@@ -1,3 +1,5 @@
+import { getExtensionName } from '../extension.js';
+
 const MESSAGES = {
   install: 'Welcome to the extension!',
   update: 'Successfully updated!',
@@ -16,7 +18,7 @@ function isFirefox() {
 document.addEventListener('DOMContentLoaded', () => {
   const manifest = browser.runtime.getManifest();
   const version = manifest.version;
-  const name = manifest.name;
+  const name = getExtensionName();
   const params = new URLSearchParams(window.location.search);
   const reason = params.get('reason');
 

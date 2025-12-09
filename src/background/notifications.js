@@ -1,3 +1,5 @@
+import { getExtensionName } from '../extension.js';
+
 export async function showNotification(options) {
   const {
     message,
@@ -13,7 +15,7 @@ export async function showNotification(options) {
   const notificationOptions = {
     type: 'basic',
     iconUrl,
-    title: 'Strava Heatmap',
+    title: getExtensionName(),
     message,
   };
 

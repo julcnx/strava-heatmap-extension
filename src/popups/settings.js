@@ -1,5 +1,7 @@
 import Sortable from '../../lib/sortablejs@1.15.0.esm.min.js';
 
+import { getExtensionName } from '../extension.js';
+
 import {
   formatLayerPresets,
   getLayerPresets,
@@ -133,6 +135,8 @@ function getCurrentLayers() {
     };
   });
 }
+
+document.getElementById('settings-title').textContent = `⚙️ ${getExtensionName()}`;
 
 document.addEventListener('DOMContentLoaded', async () => {
   const layerPresets = await getLayerPresets();

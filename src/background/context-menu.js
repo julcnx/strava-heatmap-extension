@@ -1,11 +1,10 @@
 import { resetCredentials, expireCredentials } from './credentials.js';
-
-const isDevelopment = !('update_url' in browser.runtime.getManifest());
+import { isDevelopment } from '../extension.js';
 
 const CONTEXT_MENU_ITEMS = [
   {
     id: 'about',
-    title: 'About this Extension',
+    title: `About this Extension`,
     action: () => browser.tabs.create({ url: `src/about/index.html` }),
   },
   {
@@ -23,7 +22,7 @@ const CONTEXT_MENU_ITEMS = [
     action: () => resetCredentials(),
     requiresAuth: true,
   },
-  ...(isDevelopment
+  ...(isDevelopment()
     ? [
         {
           id: 'expireCookies',

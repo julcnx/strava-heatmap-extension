@@ -11,11 +11,6 @@ export function getExtensionName() {
     return name;
   }
 
-  // If not in production mode and no [DEV] suffix, add [BUILD]
-  if (!manifest.update_url) {
-    return `${name} [BUILD]`;
-  }
-
   // Production mode - return name as-is
   return name;
 }
@@ -26,21 +21,4 @@ export function getExtensionName() {
  */
 export function isDevelopment() {
   return browser.runtime.getManifest().name.endsWith('[DEV]');
-}
-
-/**
- * Check if extension is in build mode
- * @returns {boolean}
- */
-export function isBuild() {
-  const manifest = browser.runtime.getManifest();
-  return !manifest.name.endsWith('[DEV]') && !manifest.update_url;
-}
-
-/**
- * Check if extension is in production mode
- * @returns {boolean}
- */
-export function isProduction() {
-  return Boolean(browser.runtime.getManifest().update_url);
 }

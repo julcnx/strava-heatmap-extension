@@ -2,6 +2,10 @@
 
 ## Versions
 
+### `0.13.5` (2025-12-09)
+
+- Replace automatic new-tab opening on install/updates with a clickable notification.
+
 ### `0.13.4` (2025-12-07)
 
 - Enabled clickable notifications

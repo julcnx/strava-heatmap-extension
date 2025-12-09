@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Strava Heatmap [DEV]",
   "description": "Overlay Strava Global Heatmap in iD & GPX.studio editors to reveal popular routes and patterns.",
-  "version": "0.13.4",
+  "version": "0.13.5",
   "homepage_url": "https://github.com/julcnx/strava-heatmap-extension",
   "permissions": [
     "cookies",

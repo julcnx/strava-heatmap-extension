@@ -8,6 +8,10 @@ const storageKeyLastUsed = 'overlays-last-used';
 export function bindOverlaysShortcuts(context) {
   const keybinding = context.keybinding();
 
+  const projection = iD.geoRawMercator();
+  const dispatch = iD.d3.dispatch('change');
+  const render = iD.svgData(projection, context, dispatch);
+
   keybinding.on(iD.uiCmd('⇧Q'), function (d3_event) {
     d3_event.stopImmediatePropagation();
     d3_event.preventDefault();
@@ -24,6 +28,13 @@ export function bindOverlaysShortcuts(context) {
     }
   });
 
+  keybinding.on(iD.uiCmd('⇧F'), function (d3_event) {
+    d3_event.stopImmediatePropagation();
+    d3_event.preventDefault();
+    render.geojson({});
+    context.flush();
+  });
+
   keybinding.on(iD.uiCmd('⇧G'), function (d3_event) {
     d3_event.stopImmediatePropagation();
     d3_event.preventDefault();
@@ -35,13 +46,25 @@ export function bindOverlaysShortcuts(context) {
 
     var gpx = convertJxonToGpx(jxon);
 
-    // Trigger client-side download
-    var blob = new Blob([gpx], { type: 'application/gpx+xml' });
-    var url = URL.createObjectURL(blob);
+    if (!gpx) {
+      console.warn('[StravaHeatmapExt] No created or modified ways to export as GPX.');
+      return;
+    }
 
+    // generate blob from gpx data
+    var blob = new Blob([gpx], { type: 'application/gpx+xml' });
+    blob.lastModifiedDate = new Date();
+    blob.name = 'changes.gpx';
+
+    // Highlight changes as GPX file
+    const zoom = context.map().zoom();
+    render.fileList([blob]);
+
+    // Trigger client-side download
+    var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = 'changes.gpx';
+    a.download = blob.name;
     document.body.appendChild(a);
     a.click();
 
@@ -49,6 +72,7 @@ export function bindOverlaysShortcuts(context) {
     setTimeout(() => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      context.map().zoom(zoom);
     }, 100);
   });
 }
@@ -90,12 +114,12 @@ function convertJxonToGpx(jxon) {
     .join('\n    ');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="iD-change-export" xmlns="http://www.topografix.com/GPX/1/1">
-  <trk>
-    <name>Created Ways</name>
-    ${trksegs}
-  </trk>
-</gpx>`;
+  <gpx version="1.1" creator="iD-change-export" xmlns="http://www.topografix.com/GPX/1/1">
+    <trk>
+      <name>Created/Modified Ways</name>
+      ${trksegs}
+    </trk>
+  </gpx>`;
 }
 
 export async function setupOverlaysListeners(context) {

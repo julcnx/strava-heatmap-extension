@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Strava Heatmap [DEV]",
+  "name": "Strava Heatmap",
   "description": "Overlay Strava Global Heatmap in iD & GPX.studio editors to reveal popular routes and patterns.",
   "version": "0.13.6",
   "homepage_url": "https://github.com/julcnx/strava-heatmap-extension",
@@ -15,19 +15,26 @@
     "*://www.strava.com/*",
     "*://content-a.strava.com/*",
     "*://www.openstreetmap.org/*",
-    "*://gpx.studio/*"
+    "*://gpx.studio/*",
+	"*://www.komoot.com/*"
   ],
   "action": {
     "default_popup": ""
   },
   "background": {
-    "service_worker": "src/background/index.js",
+    "scripts": [
+      "src/background/index.js"
+    ],
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["*://www.openstreetmap.org/id*"],
-      "js": ["src/clients/www.openstreetmap.org/start.js"],
+      "matches": [
+        "*://www.openstreetmap.org/id*"
+      ],
+      "js": [
+        "src/clients/www.openstreetmap.org/start.js"
+      ],
       "run_at": "document_start",
       "all_frames": true
     },
@@ -35,7 +42,8 @@
       "matches": [
         "*://www.openstreetmap.org/id*",
         "*://gpx.studio/app*",
-        "*://gpx.studio/*/app*"
+        "*://gpx.studio/*/app*",
+		"*://www.komoot.com/tour/*"
       ],
       "js": [
         "lib/browser-polyfill.min.js",
@@ -47,18 +55,35 @@
       "all_frames": true
     },
     {
-      "matches": ["*://www.strava.com/dashboard*", "*://www.strava.com/onboarding*"],
-      "js": ["lib/browser-polyfill.min.js", "src/content/strava-redirect.js"],
+      "matches": [
+        "*://www.strava.com/dashboard*",
+        "*://www.strava.com/onboarding*"
+      ],
+      "js": [
+        "lib/browser-polyfill.min.js",
+        "src/content/strava-redirect.js"
+      ],
       "run_at": "document_start"
     },
     {
-      "matches": ["*://www.strava.com/maps/global-heatmap*"],
-      "js": ["lib/browser-polyfill.min.js", "src/content/strava-heatmap.js"],
+      "matches": [
+        "*://www.strava.com/maps/global-heatmap*"
+      ],
+      "js": [
+        "lib/browser-polyfill.min.js",
+        "src/content/strava-heatmap.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["*://www.strava.com/logout*", "https://www.strava.com/"],
-      "js": ["lib/browser-polyfill.min.js", "src/content/strava-logout.js"],
+      "matches": [
+        "*://www.strava.com/logout*",
+        "https://www.strava.com/"
+      ],
+      "js": [
+        "lib/browser-polyfill.min.js",
+        "src/content/strava-logout.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -69,7 +94,11 @@
         "src/clients/common/hash.js",
         "src/clients/common/layers.js"
       ],
-      "matches": ["*://www.openstreetmap.org/*", "*://gpx.studio/*"]
+      "matches": [
+        "*://www.openstreetmap.org/*",
+        "*://gpx.studio/*",
+		"*://www.komoot.com/*"
+      ]
     },
     {
       "resources": [
@@ -80,18 +109,35 @@
         "src/clients/www.openstreetmap.org/overlays.js",
         "src/clients/www.openstreetmap.org/start.js"
       ],
-      "matches": ["*://www.openstreetmap.org/*"]
+      "matches": [
+        "*://www.openstreetmap.org/*"
+      ]
     },
     {
       "resources": [
         "src/clients/gpx.studio/index.js",
         "src/clients/gpx.studio/index.css"
       ],
-      "matches": ["*://gpx.studio/*"]
+      "matches": [
+        "*://gpx.studio/*"
+      ]
+    },
+	{
+      "resources": [
+        "src/clients/www.komoot.com/index.js"
+      ],
+      "matches": [
+        "*://www.komoot.com/*"
+      ]
     }
   ],
   "icons": {
     "48": "icons/icon-48.png"
   },
-  "minimum_chrome_version": "88"
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "id-strava-heatmap-extension@julcnx",
+      "strict_min_version": "113.0"
+    }
+  }
 }

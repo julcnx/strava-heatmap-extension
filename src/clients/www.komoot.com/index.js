@@ -7,6 +7,8 @@ import {
 
 const SOURCE_PREFIX = 'strava-source-';
 const LAYER_PREFIX = 'strava-layer-';
+const BEFORE_ID = 'heatmap-layer-all_sports';
+const WATCHDOG_INTERVAL_MS = 1000;
 
 let currentMap = null;
 let authenticated = false;
@@ -25,29 +27,19 @@ function sleep(ms) {
 async function waitForScriptData(maxAttempts = 50, interval = 100) {
   for (let i = 0; i < maxAttempts; i++) {
     const script = document.querySelector('script#strava-heatmap-client');
-
-    if (script) {
-      return script;
-    }
-
+    if (script) return script;
     await sleep(interval);
   }
-
   throw new Error('[StravaHeatmapExt] Script data not found');
 }
 
 async function waitForKomootMap(maxAttempts = 100, interval = 200) {
   for (let i = 0; i < maxAttempts; i++) {
-    if (
-      window.__kcpMap &&
-      typeof window.__kcpMap.addSource === 'function'
-    ) {
+    if (window.__kcpMap && typeof window.__kcpMap.addSource === 'function') {
       return window.__kcpMap;
     }
-
     await sleep(interval);
   }
-
   throw new Error('[StravaHeatmapExt] Komoot map not found');
 }
 
@@ -55,27 +47,30 @@ async function waitForKomootMap(maxAttempts = 100, interval = 200) {
    Layer management
 ----------------------------- */
 
-function removeExistingLayers(map) {
-  const style = map.getStyle();
+function getOurLayerIds(map) {
+  const style = map?.getStyle?.();
+  if (!style?.layers) return [];
+  return style.layers
+    .filter(l => l.id.startsWith(LAYER_PREFIX))
+    .map(l => l.id);
+}
 
+function removeExistingLayers(map) {
+  const style = map?.getStyle?.();
   if (!style) return;
 
   if (style.layers) {
     for (const layer of [...style.layers].reverse()) {
-      if (layer.id.startsWith(LAYER_PREFIX)) {
-        if (map.getLayer(layer.id)) {
-          map.removeLayer(layer.id);
-        }
+      if (layer.id.startsWith(LAYER_PREFIX) && map.getLayer(layer.id)) {
+        try { map.removeLayer(layer.id); } catch (e) { /* ignore */ }
       }
     }
   }
 
   if (style.sources) {
     for (const sourceId of Object.keys(style.sources)) {
-      if (sourceId.startsWith(SOURCE_PREFIX)) {
-        if (map.getSource(sourceId)) {
-          map.removeSource(sourceId);
-        }
+      if (sourceId.startsWith(SOURCE_PREFIX) && map.getSource(sourceId)) {
+        try { map.removeSource(sourceId); } catch (e) { /* ignore */ }
       }
     }
   }
@@ -83,13 +78,18 @@ function removeExistingLayers(map) {
 
 function applyOverlays(map) {
   if (applying) return;
-  if (!map?.isStyleLoaded?.()) return;
+  // We don't trust isStyleLoaded() — it can return false when the style is
+  // actually ready to receive layers (tile/sprite loading flips it). Just
+  // check that we have a style object and let try/catch + the watchdog handle
+  // edge cases.
+  if (!map?.getStyle?.()) {
+    console.log('[StravaHeatmapExt] applyOverlays skipped: no style yet');
+    return;
+  }
 
   applying = true;
 
   try {
-    console.log('[StravaHeatmapExt] Applying overlays to Komoot');
-
     const layerConfigs = getLayerConfigs(
       layerPresets,
       authenticated,
@@ -97,7 +97,16 @@ function applyOverlays(map) {
       true
     );
 
+    console.log(
+      '[StravaHeatmapExt] Applying overlays to Komoot',
+      `(${layerConfigs.length} layer${layerConfigs.length === 1 ? '' : 's'})`
+    );
+
     removeExistingLayers(map);
+
+    // beforeId is only valid if that target layer actually exists on the
+    // current style. On Komoot it usually doesn't.
+    const beforeId = map.getLayer(BEFORE_ID) ? BEFORE_ID : undefined;
 
     for (const config of layerConfigs) {
       const sourceId = `${SOURCE_PREFIX}${config.id}`;
@@ -110,21 +119,24 @@ function applyOverlays(map) {
         maxzoom: config.zoomExtent[1]
       });
 
-      const test = map.addLayer({
+      const layerSpec = {
         id: layerId,
         type: 'raster',
         source: sourceId,
-        paint: {
-          'raster-opacity': 0.5
-        },
-		beforeId: 'heatmap-layer-all_sports'
-      });
+        paint: { 'raster-opacity': 0.5 }
+      };
 
-      console.log('[StravaHeatmapExt] Added:', layerId, test, __kcpMap.getStyle().layers.map(l => l.id));
+      if (beforeId) {
+        map.addLayer(layerSpec, beforeId);
+      } else {
+        map.addLayer(layerSpec);
+      }
+
+      console.log('[StravaHeatmapExt] Added:', layerId);
     }
-
   } catch (err) {
     console.error('[StravaHeatmapExt] Overlay injection failed', err);
+    // Don't rethrow — the watchdog will retry next tick.
   } finally {
     applying = false;
   }
@@ -135,28 +147,53 @@ function applyOverlays(map) {
 ----------------------------- */
 
 function attachMapListeners(map) {
+  // Fires on setStyle (basemap change). Does NOT fire on initial load in
+  // mapbox/maplibre — that's why we also listen to 'load' below and try
+  // immediately in handleMapReplacement.
   map.on('style.load', () => {
-    console.log('[StravaHeatmapExt] Style reloaded');
+    console.log('[StravaHeatmapExt] style.load fired');
+    applyOverlays(map);
+  });
+
+  // Fires once when the map first becomes fully loaded. Catches the case
+  // where we attached listeners before the initial load completed.
+  map.on('load', () => {
+    console.log('[StravaHeatmapExt] load fired');
     applyOverlays(map);
   });
 }
 
 function handleMapReplacement() {
   if (!window.__kcpMap) return;
+  if (window.__kcpMap === currentMap) return;
 
-  if (window.__kcpMap !== currentMap) {
-    currentMap = window.__kcpMap;
+  currentMap = window.__kcpMap;
+  console.log('[StravaHeatmapExt] New Komoot map detected');
 
-    console.log('[StravaHeatmapExt] New Komoot map detected');
+  attachMapListeners(currentMap);
+  // Try immediately. If the style isn't ready yet, applyOverlays will bail
+  // out cleanly and one of the event handlers (or the watchdog) will catch
+  // the next opportunity.
+  applyOverlays(currentMap);
+}
 
-    attachMapListeners(currentMap);
+function watchdog() {
+  if (!currentMap || applying) return;
 
-    if (currentMap.isStyleLoaded()) {
-      applyOverlays(currentMap);
-    } else {
-      currentMap.once('load', () => applyOverlays(currentMap));
-    }
-  }
+  const expected = getLayerConfigs(layerPresets, authenticated, version, true);
+  if (expected.length === 0) return; // nothing to display, nothing to check
+
+  const present = getOurLayerIds(currentMap);
+  if (present.length === expected.length) return;
+
+  console.log(
+    '[StravaHeatmapExt] Watchdog: expected',
+    expected.length,
+    'layers, found',
+    present.length,
+    '— re-applying'
+  );
+  applyOverlays(currentMap);
 }
 
 function startMapWatcher() {
@@ -164,7 +201,8 @@ function startMapWatcher() {
 
   setInterval(() => {
     handleMapReplacement();
-  }, 500);
+    watchdog();
+  }, WATCHDOG_INTERVAL_MS);
 }
 
 /* -----------------------------
@@ -186,25 +224,17 @@ async function main() {
     });
 
     await waitForKomootMap();
-
     startMapWatcher();
 
     setupAuthStatusChangeListener((newAuthenticated) => {
       authenticated = newAuthenticated;
-
-      if (currentMap) {
-        applyOverlays(currentMap);
-      }
+      if (currentMap) applyOverlays(currentMap);
     });
 
     setupLayerPresetsChangeListener((layers) => {
       layerPresets = parseLayerPresets(layers);
-
-      if (currentMap) {
-        applyOverlays(currentMap);
-      }
+      if (currentMap) applyOverlays(currentMap);
     });
-
   } catch (error) {
     console.error('[StravaHeatmapExt] Initialization failed:', error);
   }

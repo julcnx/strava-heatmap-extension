@@ -83,6 +83,9 @@ With this extension, you can now automatically access all Strava activities as H
 
 To learn more about using the Strava Heatmap in OpenStreetMap, visit the [Strava wiki](https://wiki.openstreetmap.org/wiki/Strava).
 
-### Support for Other Editors
+### Support for Other Sites
 
-Browse existing requests or open a new one here: https://github.com/julcnx/strava-heatmap-extension/issues
+This extension currently supports the iD editor and [gpx.studio](https://gpx.studio). I'm not taking on additional sites at the moment. If you'd like to add support for another tool, feel free to fork the project.
+
+- For JOSM, check out the [JOSM Strava Heatmap Extension](https://github.com/zekefarwell/josm-strava-heatmap).
+- For RapidId, refer to the [RapId Power User Extension](https://github.com/emersonveenstra/rapid-power-user-extension/).

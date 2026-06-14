@@ -12,7 +12,31 @@ async function waitForBikeRouterDe(maxAttempts = 50, interval = 100) {
   throw new Error('[StravaHeatmapExt] Timeout waiting for bikerouter.de API');
 }
 
+function removeOneOverlay(name, url) {
+  let layers_table = L.DomUtil.get('custom_layers_table');
+  let allTr =  layers_table.querySelectorAll('tbody > tr');
+  if (allTr.length === 1) {
+    return;
+  }
+
+  let confirmPrevious = window.confirm;
+  window.confirm = function() {
+    return true;
+  }
+  for (const trElement of allTr) {
+    console.log(trElement);
+    let trName = trElement.querySelector('.custom-layer-name').textContent;
+  
+    if (name === trName) {
+      let button = trElement.querySelector('.custom-layer-delete');
+      button.click();
+    }
+  }
+  window.confirm = confirmPrevious;
+}
+
 function addOneOverlay(name, url) {
+  removeOneOverlay(name, url);
   L.DomUtil.get('layer_url').value = url;
   L.DomUtil.get('layer_name').value = name;
   L.DomUtil.get('custom_layers_add_overlay').click();
@@ -54,22 +78,24 @@ async function main() {
     // Wait for gpx.studio API to be available
     await waitForBikeRouterDe();
 
+    await new Promise(resolve => setTimeout(resolve, 200));
+
     // Apply initial overlays
     await applyOverlays(layerPresets, authenticated, version);
 
-    // // Listen for authentication status changes
-    // setupAuthStatusChangeListener(async (newAuthenticated) => {
-    //   console.log('[StravaHeatmapExt] Authentication status changed:', newAuthenticated);
-    //   authenticated = newAuthenticated;
-    //   await applyOverlays(layerPresets, authenticated, version);
-    // });
+    // Listen for authentication status changes
+    setupAuthStatusChangeListener(async (newAuthenticated) => {
+      console.log('[StravaHeatmapExt] Authentication status changed:', newAuthenticated);
+      authenticated = newAuthenticated;
+      await applyOverlays(layerPresets, authenticated, version);
+    });
 
-    // // Listen for layer preset changes
-    // setupLayerPresetsChangeListener(async (layers) => {
-    //   console.log('[StravaHeatmapExt] Layer presets changed:', layers);
-    //   layerPresets = parseLayerPresets(layers);
-    //   await applyOverlays(layerPresets, authenticated, version);
-    // });
+    // Listen for layer preset changes
+    setupLayerPresetsChangeListener(async (layers) => {
+      console.log('[StravaHeatmapExt] Layer presets changed:', layers);
+      layerPresets = parseLayerPresets(layers);
+      await applyOverlays(layerPresets, authenticated, version);
+    });
   } catch (error) {
     console.error('[StravaHeatmapExt] Failed to initialize bikerouter.de integration:', error);
   }

@@ -15,7 +15,8 @@
     "*://www.strava.com/*",
     "*://content-a.strava.com/*",
     "*://www.openstreetmap.org/*",
-    "*://gpx.studio/*"
+    "*://gpx.studio/*",
+    "*://bikerouter.de/*"
   ],
   "action": {
     "default_popup": ""
@@ -35,7 +36,8 @@
       "matches": [
         "*://www.openstreetmap.org/id*",
         "*://gpx.studio/app*",
-        "*://gpx.studio/*/app*"
+        "*://gpx.studio/*/app*",
+        "*://bikerouter.de/*"
       ],
       "js": [
         "lib/browser-polyfill.min.js",
@@ -69,7 +71,11 @@
         "src/clients/common/hash.js",
         "src/clients/common/layers.js"
       ],
-      "matches": ["*://www.openstreetmap.org/*", "*://gpx.studio/*"]
+      "matches": [
+        "*://www.openstreetmap.org/*",
+        "*://gpx.studio/*",
+        "*://bikerouter.de/*"
+      ]
     },
     {
       "resources": [
@@ -88,6 +94,13 @@
         "src/clients/gpx.studio/index.css"
       ],
       "matches": ["*://gpx.studio/*"]
+    },
+    {
+      "resources": [
+        "src/clients/bikerouter.de/index.js",
+        "src/clients/bikerouter.de/index.css"
+      ],
+      "matches": ["*://bikerouter.de/*"]
     }
   ],
   "icons": {

@@ -4,6 +4,7 @@ const REQUIRED_ORIGINS = [
   '*://www.strava.com/*',
   '*://content-a.strava.com/*',
   '*://gpx.studio/*',
+  '*://bikerouter.de/*',
   '*://www.openstreetmap.org/*',
 ];
 

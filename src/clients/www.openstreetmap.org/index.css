@@ -1,3 +1,26 @@
+/* Colorize grayscale Strava heatmap tiles with their palette (see colors.js) */
+img[src*='/globalheat/'][src*='heatmap-color=blue&'] {
+  filter: url(#strava-heatmap-blue);
+}
+img[src*='/globalheat/'][src*='heatmap-color=purple&'] {
+  filter: url(#strava-heatmap-purple);
+}
+img[src*='/globalheat/'][src*='heatmap-color=orange&'] {
+  filter: url(#strava-heatmap-orange);
+}
+img[src*='/globalheat/'][src*='heatmap-color=sunset&'] {
+  filter: url(#strava-heatmap-sunset);
+}
+img[src*='/globalheat/'][src*='heatmap-color=pink&'] {
+  filter: url(#strava-heatmap-pink);
+}
+img[src*='/globalheat/'][src*='heatmap-color=highcontrast&'] {
+  filter: url(#strava-heatmap-highcontrast);
+}
+img[src*='/globalheat/'][src*='heatmap-color=bluered&'] {
+  filter: url(#strava-heatmap-bluered);
+}
+
 body {
   .section.section-overlay-list {
     .disclosure-wrap::before {

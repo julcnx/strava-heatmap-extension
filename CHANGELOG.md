@@ -2,6 +2,14 @@
 
 ## Versions
 
+### `0.14.0` (2026-09-26)
+
+- [iD] Switch to Strava's new `grayscale` heatmap tiles (`v=20`), colorized in the browser with Strava's exact color palettes (#41)
+- New color palettes matching Strava: Blue, Purple, Orange, Sunset, Pink, Contrast, Blue-Red
+- Saved layers using removed colors are migrated automatically: Hot → Orange, Gray → Contrast
+- [gpx.studio] Keep using the legacy pre-colored tiles for now, new palettes use the closest legacy color
+- Validate Strava credentials against the `grayscale` tiles
+
 ### `0.13.8` (2026-09-09)
 
 - Add more sport types to the Other Sports group (Badminton, Basketball, Cricket, Dance, Golf, Handcycle, Inline Skate, Padel, Physical Therapy, Pickleball, Rock Climb, Roller Ski, Skateboard, Football (Soccer), Tennis, Volleyball, Wheelchair)

@@ -15,7 +15,8 @@ async function waitForGpxStudio(maxAttempts = 50, interval = 100) {
 async function applyOverlays(layerPresets, authenticated, version) {
   console.log('[StravaHeatmapExt] Applying overlays to gpx.studio', { layerPresets, authenticated });
 
-  const layerConfigs = getLayerConfigs(layerPresets, authenticated, version, true);
+  // gpx.studio can't colorize grayscale tiles yet, use legacy pre-colored tiles
+  const layerConfigs = getLayerConfigs(layerPresets, authenticated, version, true, true);
 
   window.gpxstudio.filterOverlays(layerConfigs.map((config) => config.id));
 

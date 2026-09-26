@@ -7,7 +7,7 @@ import {
   resetCredentials,
 } from './credentials.js';
 import { showInstalledNotification } from './installs.js';
-import { resetLayerPresets } from './layers.js';
+import { migrateLayerPresets, resetLayerPresets } from './layers.js';
 import { checkPermissions } from './permissions.js';
 import { redirectComplete, openLogin } from './tabs.js';
 
@@ -31,6 +31,7 @@ async function onMessage(message, sender) {
 async function onStartup() {
   await checkPermissions();
   await resetLayerPresets();
+  await migrateLayerPresets();
   await createContextMenu();
   await requestCredentials();
 }

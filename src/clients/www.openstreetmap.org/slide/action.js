@@ -1,3 +1,4 @@
+// iD graph selection and undoable edits for Slide.
 // Select one open linear way, or an unambiguous range of vertices on one way.
 export function getSlideSelection(graph, ids) {
   if (!ids.length) return null;

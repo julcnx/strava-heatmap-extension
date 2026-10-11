@@ -91,51 +91,6 @@ closed/area ways, missing OSM data and shifted heatmap imagery are not supported
 Slide is currently available in iD, not GPX.studio. Heatmap activity density is
 not evidence of legal access; always review geometry and access tags yourself.
 
-#### Saved example and regression tests
-
-Run the dependency-free tests with **Node.js 22 or later**:
-
-```sh
-npm test
-```
-
-The supplied `temp/lineInput.osc`, `temp/optimalOutputAfterSlide.osc` and all three
-PNG tiles are used as fixtures. Tests cover reference geometry, tight hairpins,
-mixed-resolution tiles, protected nodes, partial-way edits, stale results and
-cancellation. PNG tests cover all five row filters, reproduce the gray-palette
-brightness bug, and require hot and gray tiles to produce identical geometry.
-They also check `temp/currentOutput.osc` and small perturbations of the rough input.
-The cleaned zoom-15 result for `lineInput.osc` has 45 nodes, with a symmetric sampled
-distance to the supplied reference of **1.02 m mean / 2.96 m at the 95th percentile**.
-The additional `lineInput1.osc` / `lineOutput1.osc` straight-passage example and
-`15_25831_16258.png` tile verify cleanup: **122 → 54 nodes**, **32 → 0 segments
-shorter than 5 m**, and essentially unchanged heatmap alignment. Tests also bound
-the simplification error, retain protected nodes, and preserve a narrow hairpin
-even with an excessive geometric tolerance.
-These are fixture measurements, not a guarantee for other trails or tile sets.
-
-For a visual, offline preview and an OSC download, serve this folder:
-
-```sh
-python3 -m http.server 8000
-```
-
-Open <http://localhost:8000/tests/preview.html>. Toggle the input, reference and
-result lines, compare the reported `currentOutput.osc`, or switch to zoom-14-only
-tiles to check the fallback. Download the corrected example with the OSC button.
-Choose **New straight passages** to compare `lineOutput1.osc` with the cleaned
-54-node result on its supplied tile.
-<http://localhost:8000/tests/browser.html> runs a browser integration smoke test
-of the operation adapter, real indexed-PNG decoding, palette independence,
-activity chooser and cancellation
-against an iD-shaped test context. A live authenticated iD session still needs
-manual verification.
-
-The browser smoke test can also be automated with `npm run test:browser`. It uses
-installed Google Chrome on macOS, or `chromium` on Linux; set `CHROME_BIN` to use a
-different Chrome/Chromium executable. It starts its own local fixture server and
-uses an isolated temporary browser profile.
-
 ---
 
 ### GPX.studio editor

@@ -1,5 +1,5 @@
-// Strava stores heat levels as ordered 8-bit PNG palette indices. The palette
-// colors are presentation, not density: even the palette called "gray" is
+// Slide's PNG density decoder. Strava stores heat levels as ordered 8-bit PNG
+// palette indices. Colors are presentation, not density: even "gray" is
 // non-monotonic in brightness. Decode the indices before any canvas conversion
 // (which also rounds premultiplied colors/alpha and discards the indices).
 const SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];

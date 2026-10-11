@@ -3,7 +3,7 @@ import { parseLayerPresets, setupLayerPresetsChangeListener } from '../common/la
 import { restoreiDContainer, setupiDCoreContextListener } from './id.js';
 import { applyImagery } from './imagery.js';
 import { setupOverlaysListeners } from './overlays.js';
-import { setupSlide } from './slide.js';
+import { setupSlide } from './slide/index.js';
 
 async function main() {
   const script = document.querySelector('script#strava-heatmap-client');

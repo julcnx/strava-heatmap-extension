@@ -1,11 +1,11 @@
-import { createHeatmapRaster, slideLine } from '../common/slide.js';
+import { createHeatmapRaster, slideLine } from './algorithm.js';
 import {
   createSlideAction,
   getSlideSelection,
   protectedIndices,
   selectionUnchanged,
-} from './slide-action.js';
-import { loadSlideTiles, slideTileURL } from './slide-tiles.js';
+} from './action.js';
+import { loadSlideTiles, slideTileURL } from './tiles.js';
 
 function label(text) {
   const append = (selection) => selection.text(text);
@@ -15,7 +15,7 @@ function label(text) {
 
 async function installIcon() {
   if (document.getElementById('iD-operation-slide')) return;
-  const url = new URL('../../../icons/slide.svg', import.meta.url);
+  const url = new URL('../../../../icons/slide.svg', import.meta.url);
   const response = await fetch(url);
   if (!response.ok) throw new Error('Could not load the Slide icon.');
   const svg = new DOMParser().parseFromString(

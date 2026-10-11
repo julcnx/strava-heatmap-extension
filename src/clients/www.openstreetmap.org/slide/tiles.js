@@ -1,5 +1,5 @@
-import { lineBounds, metersPerPixel } from '../common/slide.js';
-import { decodeHeatmapPNG } from '../common/slide-png.js';
+import { lineBounds, metersPerPixel } from './algorithm.js';
+import { decodeHeatmapPNG } from './png.js';
 
 export const SLIDE_ZOOM = 15;
 

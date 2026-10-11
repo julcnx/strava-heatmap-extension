@@ -1,4 +1,5 @@
-// Local, dependency-free raster conflation. Coordinates are [longitude, latitude].
+// Editor-independent, dependency-free raster conflation for Slide.
+// Coordinates are [longitude, latitude].
 // Unlike an active contour, an ordered, corridor-constrained shortest path has no
 // bending force pulling it out of a narrow hairpin. Original vertices are ordered
 // waypoints; simplification happens only after the density ridge has been traced.

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Strava Heatmap [DEV]",
   "description": "Overlay Strava Global Heatmap in iD & GPX.studio editors to reveal popular routes and patterns.",
-  "version": "0.14.0",
+  "version": "0.13.8",
   "homepage_url": "https://github.com/julcnx/strava-heatmap-extension",
   "permissions": [
     "cookies",
@@ -47,12 +47,6 @@
       "all_frames": true
     },
     {
-      "matches": ["*://www.openstreetmap.org/id*"],
-      "js": ["lib/browser-polyfill.min.js", "src/content/slide-bridge.js"],
-      "run_at": "document_end",
-      "all_frames": true
-    },
-    {
       "matches": ["*://www.strava.com/dashboard*", "*://www.strava.com/onboarding*"],
       "js": ["lib/browser-polyfill.min.js", "src/content/strava-redirect.js"],
       "run_at": "document_start"
@@ -73,7 +67,9 @@
       "resources": [
         "src/clients/common/auth.js",
         "src/clients/common/hash.js",
-        "src/clients/common/layers.js"
+        "src/clients/common/layers.js",
+        "src/clients/common/slide.js",
+        "src/clients/common/slide-png.js"
       ],
       "matches": ["*://www.openstreetmap.org/*", "*://gpx.studio/*"]
     },
@@ -84,14 +80,11 @@
         "src/clients/www.openstreetmap.org/index.css",
         "src/clients/www.openstreetmap.org/index.js",
         "src/clients/www.openstreetmap.org/overlays.js",
-        "src/clients/www.openstreetmap.org/slide/action.js",
-        "src/clients/www.openstreetmap.org/slide/geometry.js",
-        "src/clients/www.openstreetmap.org/slide/install.js",
-        "src/clients/www.openstreetmap.org/slide/operation.js",
-        "src/clients/www.openstreetmap.org/slide/slide.js",
-        "src/clients/www.openstreetmap.org/slide/surface.js",
-        "src/clients/www.openstreetmap.org/slide/tiles.js",
-        "src/clients/www.openstreetmap.org/start.js"
+        "src/clients/www.openstreetmap.org/start.js",
+        "src/clients/www.openstreetmap.org/slide.js",
+        "src/clients/www.openstreetmap.org/slide-action.js",
+        "src/clients/www.openstreetmap.org/slide-tiles.js",
+        "icons/slide.svg"
       ],
       "matches": ["*://www.openstreetmap.org/*"]
     },

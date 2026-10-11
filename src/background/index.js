@@ -10,7 +10,6 @@ import { showInstalledNotification } from './installs.js';
 import { resetLayerPresets } from './layers.js';
 import { checkPermissions } from './permissions.js';
 import { redirectComplete, openLogin } from './tabs.js';
-import { fetchHeatmapTile } from './tiles.js';
 
 async function onMessage(message, sender) {
   const MESSAGE_HANDLERS = {
@@ -19,7 +18,6 @@ async function onMessage(message, sender) {
     expireCredentials,
     redirectComplete,
     openLogin,
-    fetchHeatmapTile,
   };
 
   if (MESSAGE_HANDLERS[message.type]) {

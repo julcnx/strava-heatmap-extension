@@ -3,7 +3,7 @@ import { parseLayerPresets, setupLayerPresetsChangeListener } from '../common/la
 import { restoreiDContainer, setupiDCoreContextListener } from './id.js';
 import { applyImagery } from './imagery.js';
 import { setupOverlaysListeners } from './overlays.js';
-import { setupSlideOperation } from './slide/install.js';
+import { setupSlide } from './slide.js';
 
 async function main() {
   const script = document.querySelector('script#strava-heatmap-client');
@@ -23,28 +23,25 @@ async function main() {
     // make sure ui fully loaded
     await context.ui().ensureLoaded();
 
-    // live extension state for the "Slide to Heatmap" operation
-    const getSlideState = () => ({ authenticated });
-
-    // `ui.restart()` inside applyImagery clears the keybindings, so the
-    // operation has to (re)bind after every imagery change
-    const installSlide = () => setupSlideOperation(context, getSlideState);
-
     await applyImagery(context, layerPresets, authenticated, version);
-    installSlide();
 
     await setupOverlaysListeners(context);
+
+    try {
+      await setupSlide(context, () => authenticated);
+    } catch (error) {
+      // A Slide initialization problem should never disable the heatmap.
+      console.warn('[StravaHeatmapExt] Could not initialize Slide:', error);
+    }
 
     setupAuthStatusChangeListener(async (newAuthenticated) => {
       authenticated = newAuthenticated;
       await applyImagery(context, layerPresets, authenticated, version);
-      installSlide();
     });
 
     setupLayerPresetsChangeListener(async (layers) => {
       layerPresets = parseLayerPresets(layers);
       await applyImagery(context, layerPresets, authenticated, version);
-      installSlide();
     });
 
     // ensure document is focused to listen to keyboard events

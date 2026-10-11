@@ -52,28 +52,89 @@ To enable the Strava Heatmap in the iD editor:
 5. After logging in, use the green extension icon to configure heatmap layers — choose activity type, color, and manage layer order or deletion.
 6. In the editor, press Shift + Q to toggle the heatmap, and Shift + W to toggle data visibility.
 
-#### Slide to Heatmap
+### Strava Slide (iD)
 
-With a Strava Heatmap overlay switched on and the extension signed in, an
-existing line can be snapped to the closest trace of that heatmap:
+1. Log into Strava with the extension and enable a Strava heatmap overlay.
+2. Draw a rough **open line** close to the desired trail, or select an existing line.
+3. Press **Shift + S**, or right-click the selected line and choose **Slide**
+   (the blue-arrow/trail icon).
+   To slide only part of a way, select two or more of its vertices instead.
+4. If several Strava overlays are enabled, choose the activity to follow.
+5. Review the result before saving. Use iD's normal **Undo** to restore the original line.
 
-1. Right-click a line (way) in the editor to open the edit menu.
-2. Choose **Slide to Heatmap**, or press Shift + S while the line is selected.
-3. The line's interior vertices slide onto the nearest heatmap trace — the
-   first and last vertex stay put — and the whole change is recorded as a
-   single undoable step (Ctrl/Cmd + Z).
+Slide runs locally in vanilla JavaScript, without the discontinued Strava Slide
+server. Inspired by [Paul Mach's Slide](https://github.com/paulmach/slide/) and
+[Strava's iD integration](https://github.com/strava/iD), this implementation follows
+density-weighted shortest paths through an ordered corridor,
+rather than using the strong bending/smoothing forces that can cut across tight
+curves. It adds vertices where necessary while retaining original node IDs and
+way tags. Endpoints, tagged nodes, shared junctions and relation-member nodes are
+kept fixed. All changes are a single undoable edit; cancellation or errors leave
+the map unchanged.
 
-Details worth knowing:
+After tracing, a heatmap-aware **Douglas–Peucker** pass removes redundant inserted
+vertices with a **2 m geometric tolerance**. The earlier 1.2 m tolerance retained
+pixel stair-steps as small angular kinks. A density check vetoes shortcuts that
+would leave a narrow trail, and all original nodes remain present. This is
+simplification rather than coordinate-averaging smoothing, so it does not move
+retained vertices or round off bends indiscriminately. Closely spaced original
+or protected nodes are intentionally not deleted to enforce a spacing rule.
 
-- The action only appears while signed in to Strava; it is greyed out with an
-  explanation when no Strava Heatmap overlay is enabled.
-- The heatmap used is the one currently enabled in the overlay list, so the
-  activity type and color you picked are honoured.
-- Lines longer than about 7 km span more than the 3×3 heatmap tiles the
-  operation fetches and are refused — split the line first.
-- Untagged interior vertices are moved along the trace (new ones are added
-  where the trace needs more detail). Vertices shared with other ways or
-  carrying tags are preserved and snapped onto the resulting line instead.
+The selected activity and palette are preserved. Density is read directly from
+Strava's ordered PNG palette indices, **not RGB brightness**: even the palette
+called `gray` is non-monotonic in brightness and previously caused Slide to trace
+the edges of trails. Zoom 15 is preferred, with correctly scaled zoom-14
+parent fallback for missing tiles. The initial line must be close to the desired
+trail (a 24 m search corridor and 18 m interior-node snapping radius). At forks or
+ambiguous parallel trails, add guide vertices. Weak/disconnected heatmap data,
+closed/area ways, missing OSM data and shifted heatmap imagery are not supported.
+Slide is currently available in iD, not GPX.studio. Heatmap activity density is
+not evidence of legal access; always review geometry and access tags yourself.
+
+#### Saved example and regression tests
+
+Run the dependency-free tests with **Node.js 22 or later**:
+
+```sh
+npm test
+```
+
+The supplied `temp/lineInput.osc`, `temp/optimalOutputAfterSlide.osc` and all three
+PNG tiles are used as fixtures. Tests cover reference geometry, tight hairpins,
+mixed-resolution tiles, protected nodes, partial-way edits, stale results and
+cancellation. PNG tests cover all five row filters, reproduce the gray-palette
+brightness bug, and require hot and gray tiles to produce identical geometry.
+They also check `temp/currentOutput.osc` and small perturbations of the rough input.
+The cleaned zoom-15 result for `lineInput.osc` has 45 nodes, with a symmetric sampled
+distance to the supplied reference of **1.02 m mean / 2.96 m at the 95th percentile**.
+The additional `lineInput1.osc` / `lineOutput1.osc` straight-passage example and
+`15_25831_16258.png` tile verify cleanup: **122 → 54 nodes**, **32 → 0 segments
+shorter than 5 m**, and essentially unchanged heatmap alignment. Tests also bound
+the simplification error, retain protected nodes, and preserve a narrow hairpin
+even with an excessive geometric tolerance.
+These are fixture measurements, not a guarantee for other trails or tile sets.
+
+For a visual, offline preview and an OSC download, serve this folder:
+
+```sh
+python3 -m http.server 8000
+```
+
+Open <http://localhost:8000/tests/preview.html>. Toggle the input, reference and
+result lines, compare the reported `currentOutput.osc`, or switch to zoom-14-only
+tiles to check the fallback. Download the corrected example with the OSC button.
+Choose **New straight passages** to compare `lineOutput1.osc` with the cleaned
+54-node result on its supplied tile.
+<http://localhost:8000/tests/browser.html> runs a browser integration smoke test
+of the operation adapter, real indexed-PNG decoding, palette independence,
+activity chooser and cancellation
+against an iD-shaped test context. A live authenticated iD session still needs
+manual verification.
+
+The browser smoke test can also be automated with `npm run test:browser`. It uses
+installed Google Chrome on macOS, or `chromium` on Linux; set `CHROME_BIN` to use a
+different Chrome/Chromium executable. It starts its own local fixture server and
+uses an isolated temporary browser profile.
 
 ---
 
@@ -112,20 +173,3 @@ This extension currently supports the iD editor and [gpx.studio](https://gpx.stu
 
 - For JOSM, check out the [JOSM Strava Heatmap Extension](https://github.com/zekefarwell/josm-strava-heatmap).
 - For RapidId, refer to the [RapId Power User Extension](https://github.com/emersonveenstra/rapid-power-user-extension/).
-
-## Development
-
-```sh
-npm ci         # install the build tooling
-npm test       # Slide feature tests (tile math, engine, way rewrite)
-npm run build  # Chrome and Firefox zips into dist/
-```
-
-The "Slide to Heatmap" feature lives in
-[`src/clients/www.openstreetmap.org/slide/`](./src/clients/www.openstreetmap.org/slide/):
-`geometry.js`, `surface.js` and `slide.js` are a verbatim copy of
-[jsSlide](https://github.com/paulmach/slide)'s JavaScript port, while `tiles.js`
-(heatmap tiles → surface), `action.js` (slid path → iD way), `operation.js`
-(the menu entry) and `install.js` (the `showEditMenu` hook) are the extension's
-own. `src/content/slide-bridge.js` plus `src/background/tiles.js` proxy tile
-requests when the page's own `fetch()` is blocked by CORS or CSP.

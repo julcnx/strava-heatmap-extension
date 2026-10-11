@@ -4,7 +4,8 @@
   "description": "This browser extension seamlessly integrates the Strava Global Heatmap into popular mapping editors, including the OpenStreetMap iD editor and GPX Studio, enhancing your mapping and route analysis capabilities.",
   "scripts": {
     "build": "node scripts/build.js",
-    "test": "node test/slide.test.mjs"
+    "test": "node --experimental-default-type=module --test tests/*.test.js",
+    "test:browser": "node scripts/test-browser.mjs"
   },
   "author": "Julien Etienne <etienne.julien@gmail.com>",
   "license": "MIT",

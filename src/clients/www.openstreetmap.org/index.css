@@ -23,3 +23,51 @@ body {
     }
   }
 }
+
+.strava-slide-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.strava-slide-dialog {
+  width: min(360px, calc(100vw - 32px));
+  padding: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: #fff;
+  color: #222;
+  box-shadow: 0 4px 24px #0005;
+}
+
+.strava-slide-dialog::backdrop {
+  background: #0005;
+}
+
+.strava-slide-dialog h3 {
+  margin: 0 0 12px;
+}
+
+.strava-slide-dialog p {
+  margin-bottom: 12px;
+}
+
+.strava-slide-dialog progress,
+.strava-slide-dialog select {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.strava-slide-dialog button {
+  padding: 8px 16px;
+  margin-right: 8px;
+  border-radius: 4px;
+  background: #eee;
+  color: #222;
+}
+
+.strava-slide-dialog button:focus-visible {
+  outline: 2px solid #7092ff;
+}

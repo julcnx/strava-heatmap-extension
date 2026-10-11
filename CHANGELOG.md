@@ -2,11 +2,6 @@
 
 ## Versions
 
-### `0.14.0` (2026-10-01)
-
-- [iD] Add "Slide to Heatmap": right-click a line (or press Shift+S) to snap its interior vertices to the nearest trace of the enabled Strava Heatmap overlay. Only offered while signed in; endpoints stay put and shared/tagged vertices are preserved.
-- [iD] Proxy heatmap tile requests through the background service worker when the page's own `fetch()` is blocked by CORS or the page CSP.
-
 ### `0.13.8` (2026-09-09)
 
 - Add more sport types to the Other Sports group (Badminton, Basketball, Cricket, Dance, Golf, Handcycle, Inline Skate, Padel, Physical Therapy, Pickleball, Rock Climb, Roller Ski, Skateboard, Football (Soccer), Tennis, Volleyball, Wheelchair)

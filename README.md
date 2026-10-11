@@ -54,6 +54,8 @@ To enable the Strava Heatmap in the iD editor:
 
 ### Strava Slide (iD)
 
+With a Strava Heatmap overlay switched on and the extension signed in, an existing line can be snapped to the closest trace of that heatmap. Inspired by [Paul Mach's Slide](https://github.com/paulmach/slide/) and [Strava's iD integration](https://github.com/strava/iD).
+
 1. Log into Strava with the extension and enable a Strava heatmap overlay.
 2. Draw a rough **open line** close to the desired trail, or select an existing line.
 3. Press **Shift + S**, or right-click the selected line and choose **Slide**
@@ -61,37 +63,6 @@ To enable the Strava Heatmap in the iD editor:
    To slide only part of a way, select two or more of its vertices instead.
 4. If several Strava overlays are enabled, choose the activity to follow.
 5. Review the result before saving. Use iD's normal **Undo** to restore the original line.
-
-Slide runs locally in vanilla JavaScript, without the discontinued Strava Slide
-server. Inspired by [Paul Mach's Slide](https://github.com/paulmach/slide/) and
-[Strava's iD integration](https://github.com/strava/iD), this implementation follows
-density-weighted shortest paths through an ordered corridor,
-rather than using the strong bending/smoothing forces that can cut across tight
-curves. It adds vertices where necessary while retaining original node IDs and
-way tags. Endpoints, tagged nodes, shared junctions and relation-member nodes are
-kept fixed. All changes are a single undoable edit; cancellation or errors leave
-the map unchanged.
-
-After tracing, a heatmap-aware **Douglas–Peucker** pass removes redundant inserted
-vertices with a **2 m geometric tolerance**. The earlier 1.2 m tolerance retained
-pixel stair-steps as small angular kinks. A density check vetoes shortcuts that
-would leave a narrow trail, and all original nodes remain present. This is
-simplification rather than coordinate-averaging smoothing, so it does not move
-retained vertices or round off bends indiscriminately. Closely spaced original
-or protected nodes are intentionally not deleted to enforce a spacing rule.
-
-The selected activity and palette are preserved. Density is read directly from
-Strava's ordered PNG palette indices, **not RGB brightness**: even the palette
-called `gray` is non-monotonic in brightness and previously caused Slide to trace
-the edges of trails. Zoom 15 is preferred, with correctly scaled zoom-14
-parent fallback for missing tiles. The initial line must be close to the desired
-trail (a 24 m search corridor and 18 m interior-node snapping radius). At forks or
-ambiguous parallel trails, add guide vertices. Weak/disconnected heatmap data,
-closed/area ways, missing OSM data and shifted heatmap imagery are not supported.
-Slide is currently available in iD, not GPX.studio. Heatmap activity density is
-not evidence of legal access; always review geometry and access tags yourself.
-
----
 
 ### GPX.studio editor
 

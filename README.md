@@ -54,6 +54,8 @@ To enable the Strava Heatmap in the iD editor:
 
 ### Strava Slide (iD)
 
+https://github.com/user-attachments/assets/8e15a0e4-30a3-4ea1-860b-60750700e54a
+
 With a Strava Heatmap overlay switched on and the extension signed in, an existing line can be snapped to the closest trace of that heatmap. Inspired by [Paul Mach's Slide](https://github.com/paulmach/slide/) and [Strava's iD integration](https://github.com/strava/iD).
 
 1. Log into Strava with the extension and enable a Strava heatmap overlay.

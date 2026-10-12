@@ -6,6 +6,17 @@
 const TILE_SIZE = 512;
 const EARTH_CIRCUMFERENCE = 40075016.68557849;
 
+// Share search limits with the tile loader: widening a search is only useful
+// when the surrounding imagery has actually been downloaded.
+export const SLIDE_DEFAULTS = Object.freeze({
+  searchRadiusMeters: 24,
+  maxSearchRadiusMeters: 80,
+  snapRadiusMeters: 18,
+  maxSnapRadiusMeters: 60,
+  simplifyMeters: 2,
+  contrastRadiusMeters: 12,
+});
+
 export function project(loc, zoom = 15) {
   const size = TILE_SIZE * 2 ** zoom;
   const lat = (Math.max(-85.05112878, Math.min(85.05112878, loc[1])) * Math.PI) / 180;
@@ -229,6 +240,89 @@ function checkAbort(signal) {
   if (signal?.aborted) throw new DOMException('Slide cancelled.', 'AbortError');
 }
 
+function noSignal(message) {
+  const error = new Error(message);
+  error.code = 'SLIDE_NO_SIGNAL';
+  return error;
+}
+
+function isCovered(raster, point) {
+  const x = Math.floor(point[0]) - raster.x,
+    y = Math.floor(point[1]) - raster.y;
+  return (
+    x >= 0 &&
+    y >= 0 &&
+    x < raster.width &&
+    y < raster.height &&
+    Boolean(raster.coverage[y * raster.width + x])
+  );
+}
+
+function searchRadii(initial, maximum) {
+  const radii = [initial];
+  while (radii[radii.length - 1] < maximum) {
+    radii.push(Math.min(maximum, radii[radii.length - 1] * 2));
+  }
+  return radii;
+}
+
+async function trackingSurface(raster, scale, options) {
+  // Normalize by nearby peaks, not by the brightest road anywhere in a tile.
+  // A weak but coherent ridge can then have the same tracking strength as a
+  // bright ridge. Keep a small absolute floor so individual quantization specks
+  // are not amplified into fully convincing trails.
+  const radius = Math.max(1, Math.ceil(SLIDE_DEFAULTS.contrastRadiusMeters / scale));
+  const { width, height, density, coverage } = raster;
+  const horizontal = new Float32Array(density.length);
+  const signal = new Float32Array(density.length);
+  const queue = new Int32Array(Math.max(width, height));
+  const value = (index) => (coverage[index] ? density[index] : 0);
+  for (let y = 0; y < height; y++) {
+    if (y % 64 === 0) {
+      await options.yield();
+      checkAbort(options.signal);
+    }
+    const row = y * width;
+    let head = 0,
+      tail = 0,
+      next = 0;
+    for (let x = 0; x < width; x++) {
+      const right = Math.min(width - 1, x + radius);
+      while (next <= right) {
+        const v = value(row + next);
+        while (tail > head && value(row + queue[tail - 1]) <= v) tail--;
+        queue[tail++] = next++;
+      }
+      while (queue[head] < x - radius) head++;
+      horizontal[row + x] = value(row + queue[head]);
+    }
+  }
+  let hasSignal = false;
+  for (let x = 0; x < width; x++) {
+    if (x % 64 === 0) {
+      await options.yield();
+      checkAbort(options.signal);
+    }
+    let head = 0,
+      tail = 0,
+      next = 0;
+    for (let y = 0; y < height; y++) {
+      const bottom = Math.min(height - 1, y + radius);
+      while (next <= bottom) {
+        const v = horizontal[next * width + x];
+        while (tail > head && horizontal[queue[tail - 1] * width + x] <= v) tail--;
+        queue[tail++] = next++;
+      }
+      while (queue[head] < y - radius) head++;
+      const index = y * width + x;
+      signal[index] = value(index) / Math.max(0.004, horizontal[queue[head] * width + x]);
+      if (signal[index] >= 0.25) hasSignal = true;
+    }
+  }
+  if (!hasSignal) throw noSignal('No usable heatmap trail is visible in this area.');
+  return { ...raster, density: signal };
+}
+
 function snap(raster, point, radius) {
   let best,
     bestScore = -Infinity;
@@ -245,6 +339,9 @@ function snap(raster, point, radius) {
         !raster.coverage[index]
       )
         continue;
+      // Filter candidates BEFORE applying the distance penalty. Otherwise a
+      // dark unsnapped point can beat a visible weak trail and fail afterwards.
+      if (raster.density[index] < 0.25) continue;
       const score = raster.density[index] - 0.12 * (distance / radius) ** 2;
       if (score > bestScore) {
         bestScore = score;
@@ -252,15 +349,13 @@ function snap(raster, point, radius) {
       }
     }
   }
-  if (!best || sampleDensity(raster, best) < 0.08) {
-    throw new Error(
-      'No usable heatmap near a vertex. Move the line closer to the desired trail.'
-    );
-  }
   return best;
 }
 
 async function trace(raster, start, end, originalStart, originalEnd, radius, options) {
+  if (!isCovered(raster, start) || !isCovered(raster, end)) {
+    throw new Error('Heatmap coverage is incomplete at an endpoint.');
+  }
   const minX = Math.max(
     raster.x,
     Math.floor(Math.min(originalStart[0], originalEnd[0], start[0], end[0]) - radius)
@@ -296,7 +391,7 @@ async function trace(raster, start, end, originalStart, originalEnd, radius, opt
   const from = (Math.round(start[1]) - minY) * width + Math.round(start[0]) - minX;
   const to = (Math.round(end[1]) - minY) * width + Math.round(end[0]) - minX;
   if (!Number.isFinite(cellCosts[from]) || !Number.isFinite(cellCosts[to])) {
-    throw new Error('Heatmap coverage is incomplete at an endpoint.');
+    throw noSignal('The search corridor does not yet reach the snapped trail.');
   }
   const heap = new MinHeap();
   costs[from] = 0;
@@ -345,18 +440,63 @@ async function trace(raster, start, end, originalStart, originalEnd, radius, opt
       }
     }
   }
-  if (!visited[to]) throw new Error('No continuous heatmap coverage along this section.');
+  if (!visited[to]) throw noSignal('No continuous heatmap coverage along this section.');
   const points = [];
   for (let i = to; i !== -1; i = parents[i])
     points.push([minX + (i % width), minY + Math.floor(i / width)]);
   points.reverse();
   points[0] = start;
   points[points.length - 1] = end;
-  // Refuse a mostly dark shortcut instead of returning a plausible-looking edit.
-  const dark = points.filter((p) => sampleDensity(raster, p) < 0.08).length;
-  if (dark > Math.max(3, points.length * 0.15)) {
-    throw new Error(
-      'Heatmap is too weak or disconnected here. Add guide vertices closer to the trail.'
+  // Evaluate continuity in locally normalized signal, not absolute brightness.
+  // A fixed endpoint may be off-trail: allow a bounded approach at either end,
+  // but never treat a long dark interior shortcut as a traced trail.
+  const support = points.map((p) => sampleDensity(raster, p) >= 0.12);
+  const first = support.indexOf(true),
+    last = support.lastIndexOf(true);
+  let leading = 0,
+    trailing = 0,
+    gap = 0,
+    longestGap = 0,
+    dark = 0;
+  let supportedLength = 0,
+    totalLength = 0;
+  for (let i = 1; i < points.length; i++) {
+    const length = Math.hypot(
+      points[i][0] - points[i - 1][0],
+      points[i][1] - points[i - 1][1]
+    );
+    totalLength += length;
+    if (support[i] && support[i - 1]) supportedLength += length;
+  }
+  for (let i = 1; i <= first; i++)
+    leading += Math.hypot(
+      points[i][0] - points[i - 1][0],
+      points[i][1] - points[i - 1][1]
+    );
+  for (let i = last + 1; i < points.length && i > 0; i++)
+    trailing += Math.hypot(
+      points[i][0] - points[i - 1][0],
+      points[i][1] - points[i - 1][1]
+    );
+  for (let i = first; i <= last && i >= 0; i++) {
+    if (support[i]) gap = 0;
+    else {
+      dark++;
+      gap += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+      longestGap = Math.max(longestGap, gap);
+    }
+  }
+  const maxGap = 12 / options.scale;
+  if (
+    first === -1 ||
+    leading > radius + 2 ||
+    trailing > radius + 2 ||
+    longestGap > maxGap ||
+    dark > Math.max(3, (last - first + 1) * 0.15) ||
+    supportedLength < Math.min(20 / options.scale, totalLength * 0.5)
+  ) {
+    throw noSignal(
+      'No continuous nearby heatmap trail found. Add a guide vertex to select the intended trail.'
     );
   }
   return points;
@@ -387,6 +527,19 @@ function simplify(points, tolerance, raster) {
       const dx = b[0] - a[0],
         dy = b[1] - a[1],
         length = dx * dx + dy * dy;
+      // A simplification must not cut across a missing tile corner that the
+      // traced grid path avoided. Check the whole chord, not just its ends.
+      const steps = Math.max(1, Math.ceil(Math.sqrt(length) * 2));
+      for (let step = 0; step <= steps; step++) {
+        const t = step / steps;
+        if (!isCovered(raster, [a[0] + t * dx, a[1] + t * dy])) {
+          farthest = Math.max(
+            start + 1,
+            Math.min(end - 1, Math.round(start + t * (end - start)))
+          );
+          break;
+        }
+      }
       let worstLoss = 0.06;
       for (let i = start + 1; i < end; i++) {
         const p = points[i];
@@ -429,36 +582,83 @@ export async function slideLine(locations, raster, options = {}) {
   options = { yield: () => new Promise((resolve) => setTimeout(resolve, 0)), ...options };
   checkAbort(options.signal);
   const scale = metersPerPixel(locations[0][1], raster.zoom);
-  const radius = (options.searchRadiusMeters ?? 24) / scale;
-  const snapRadius = (options.snapRadiusMeters ?? 18) / scale;
+  const searchMeters = options.searchRadiusMeters ?? SLIDE_DEFAULTS.searchRadiusMeters;
+  const snapMeters = options.snapRadiusMeters ?? SLIDE_DEFAULTS.snapRadiusMeters;
+  // Explicit radii remain hard limits unless a larger maximum is requested.
+  const maxSearchMeters =
+    options.maxSearchRadiusMeters ??
+    (options.searchRadiusMeters === undefined
+      ? SLIDE_DEFAULTS.maxSearchRadiusMeters
+      : searchMeters);
+  const maxSnapMeters =
+    options.maxSnapRadiusMeters ??
+    (options.snapRadiusMeters === undefined
+      ? Math.min(SLIDE_DEFAULTS.maxSnapRadiusMeters, maxSearchMeters)
+      : snapMeters);
+  const radius = searchMeters / scale,
+    snapRadius = snapMeters / scale;
   // 1.2 m was only about half a zoom-15 pixel (~2.39 m/pixel here), so the old
   // Douglas–Peucker pass retained raster stair-steps as tiny 45°/90° bends.
   // Two meters removes that quantization noise; the density guard protects
   // genuine tight bends. Original vertices remain segment endpoints throughout.
-  const tolerance = (options.simplifyMeters ?? 2) / scale;
+  const tolerance = (options.simplifyMeters ?? SLIDE_DEFAULTS.simplifyMeters) / scale;
   if (!Number.isFinite(tolerance) || tolerance < 0)
     throw new Error('Invalid Slide simplification tolerance.');
-  if (!(radius > 0) || !(snapRadius > 0) || snapRadius > radius)
+  if (
+    ![searchMeters, snapMeters, maxSearchMeters, maxSnapMeters].every(Number.isFinite) ||
+    !(radius > 0) ||
+    !(snapRadius > 0) ||
+    snapRadius > radius ||
+    maxSearchMeters < searchMeters ||
+    maxSnapMeters < snapMeters ||
+    maxSnapMeters > maxSearchMeters
+  )
     throw new Error('Invalid Slide search radius.');
+  options.scale = scale;
+  const tracking = await trackingSurface(raster, scale, options);
   const originals = locations.map((loc) => project(loc, raster.zoom));
   const fixed = new Set([0, locations.length - 1, ...(options.fixedIndices || [])]);
-  const anchors = originals.map((p, i) =>
-    fixed.has(i) ? p : snap(raster, p, snapRadius)
-  );
+  const snapSearches = searchRadii(snapRadius, maxSnapMeters / scale);
+  const anchors = [];
+  for (let i = 0; i < originals.length; i++) {
+    await options.yield();
+    checkAbort(options.signal);
+    let anchor = fixed.has(i) ? originals[i] : null;
+    for (const r of snapSearches) {
+      if (anchor) break;
+      anchor = snap(tracking, originals[i], r);
+    }
+    if (!anchor)
+      throw noSignal(
+        `No nearby heatmap trail within ${maxSnapMeters} m of vertex ${i + 1}. Add a guide vertex closer to the intended trail.`
+      );
+    anchors.push(anchor);
+  }
   const result = [{ loc: locations[0].slice(), nodeIndex: 0 }];
   for (let i = 1; i < originals.length; i++) {
     await options.yield();
     checkAbort(options.signal);
-    const path = await trace(
-      raster,
-      anchors[i - 1],
-      anchors[i],
-      originals[i - 1],
-      originals[i],
-      radius,
-      options
-    );
-    const reduced = simplify(path, tolerance, raster);
+    let path;
+    for (const r of searchRadii(radius, maxSearchMeters / scale)) {
+      try {
+        path = await trace(
+          tracking,
+          anchors[i - 1],
+          anchors[i],
+          originals[i - 1],
+          originals[i],
+          r,
+          options
+        );
+        break;
+      } catch (error) {
+        if (error.code !== 'SLIDE_NO_SIGNAL' || r === maxSearchMeters / scale)
+          throw error;
+        await options.yield();
+        checkAbort(options.signal);
+      }
+    }
+    const reduced = simplify(path, tolerance, tracking);
     for (let j = 1; j < reduced.length - 1; j++) {
       result.push({ loc: unproject(reduced[j], raster.zoom), nodeIndex: null });
     }

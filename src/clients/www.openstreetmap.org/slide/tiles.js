@@ -1,4 +1,4 @@
-import { lineBounds, metersPerPixel } from './algorithm.js';
+import { lineBounds, metersPerPixel, SLIDE_DEFAULTS } from './algorithm.js';
 import { decodeHeatmapPNG } from './png.js';
 
 export const SLIDE_ZOOM = 15;
@@ -25,7 +25,11 @@ async function decodeTile(blob, z, x, y, signal) {
 
 export async function loadSlideTiles(locations, source, signal, onProgress) {
   const zoom = SLIDE_ZOOM;
-  const padding = Math.ceil(28 / metersPerPixel(locations[0][1], zoom)) + 3;
+  const padding =
+    Math.ceil(
+      (SLIDE_DEFAULTS.maxSearchRadiusMeters + SLIDE_DEFAULTS.contrastRadiusMeters) /
+        metersPerPixel(locations[0][1], zoom)
+    ) + 3;
   const bounds = lineBounds(locations, zoom, padding);
   if ((bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY) > 4000000) {
     throw new Error('Slide area is too large. Select a shorter section of the line.');
@@ -57,6 +61,11 @@ export async function loadSlideTiles(locations, source, signal, onProgress) {
             if ((response.status === 404 || response.status === 410) && z === zoom) {
               return await load(z - 1, Math.floor(x / 2), Math.floor(y / 2));
             }
+            // A missing child AND parent is an actual coverage hole, not an
+            // authentication failure. Keep the remaining tiles usable (the
+            // widened buffer may include empty areas). The tracing algorithm
+            // never invents heat or crosses these missing pixels.
+            if (response.status === 404 || response.status === 410) return null;
             if (response.status === 401 || response.status === 403) {
               throw new Error('Strava access expired. Log in again using the extension.');
             }
@@ -88,5 +97,7 @@ export async function loadSlideTiles(locations, source, signal, onProgress) {
       );
     }
   }
-  return { tiles: [...new Set(await Promise.all(requests))], bounds, zoom };
+  const tiles = [...new Set((await Promise.all(requests)).filter(Boolean))];
+  if (!tiles.length) throw new Error('No heatmap tiles are available in this area.');
+  return { tiles, bounds, zoom };
 }

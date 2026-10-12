@@ -211,7 +211,7 @@ export async function setupSlide(context, isAuthenticated) {
     };
     operation.tooltip = () =>
       operation.disabled() ||
-      'Slide the selected line or vertex range along the Strava heatmap (Shift+S). Removes small kinks while keeping endpoints and connected/tagged nodes fixed. Undo to restore the line.';
+      'Slide the selected line or vertex range along the Strava heatmap (Shift+S).';
     return operation;
   }
 

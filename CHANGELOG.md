@@ -2,7 +2,7 @@
 
 ## Versions
 
-### `0.14.0` (2026-09-26)
+### `0.14.0` (2026-10-12)
 
 - [iD] Switch to Strava's new `grayscale` heatmap tiles (`v=20`), colorized in the browser with Strava's exact color palettes (#41)
 - New color palettes matching Strava: Blue, Purple, Orange, Sunset, Pink, Contrast, Blue-Red

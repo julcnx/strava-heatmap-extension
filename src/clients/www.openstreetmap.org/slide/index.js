@@ -299,7 +299,7 @@ export async function setupSlide(context, isAuthenticated) {
     operation.disabled = () => {
       if (busy) return 'Slide is already running.';
       const selection = getSlideSelection(context.graph(), ids);
-      if (!selection) return 'Select one open line, or vertices on the same open line.';
+      if (!selection) return 'Select a line, or two or more points on the same line.';
       if (context.inIntro() || !context.editable())
         return 'Slide is unavailable outside normal editing mode.';
       if (!isAuthenticated()) return 'Log into Strava using the extension first.';
@@ -315,7 +315,7 @@ export async function setupSlide(context, isAuthenticated) {
           return 'Reset the heatmap imagery offset before sliding.';
       }
       if (selection.nodes.length > 1000)
-        return 'Select a shorter section (at most 1000 vertices).';
+        return 'Select a shorter section (at most 1000 points).';
       if (isStructure(selection.way)) return 'Slide does not move bridges or tunnels.';
       const connection = context.connection();
       if (
@@ -331,7 +331,7 @@ export async function setupSlide(context, isAuthenticated) {
     operation.tooltip = () =>
       // While disabled, iD shows the reason instead of the tooltip text.
       operation.disabled() ||
-      'Slide the selected line or vertex range along the Strava heatmap (Shift+S). Undo restores them.';
+      'Slide the selected line or section along the Strava heatmap (Shift+S). Undo restores it.';
     return operation;
   }
 
@@ -382,9 +382,7 @@ export async function setupSlide(context, isAuthenticated) {
           .flash.duration(4000)
           .iconName('#iD-operation-slide')
           .iconClass('operation disabled strava-slide-error')
-          .label(
-            label('Slide works on a line, or on two or more vertices of one line.')
-          )();
+          .label(label('Slide works on a line, or on two or more points of one line.'))();
       }
       return;
     }

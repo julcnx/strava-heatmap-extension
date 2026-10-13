@@ -7,7 +7,7 @@
 - [iD] Add "Strava Slide": press Shift+S, or right-click a line and choose Slide, to snap it onto the heatmap trail. One Undo restores the line. Thanks @rene78 (#43, #45)
   - Untagged junctions and line ends move onto the trail (at most 18 m); tagged nodes, relation members, bridges, tunnels and short ways stay in place
   - Sections without a usable heatmap trail are left as drawn instead of failing the whole line
-  - Avoids running along other roads into a junction, folding back over itself, spikes and near-duplicate vertices
+  - Avoids running along other roads into a junction, folding back over itself, spikes and near-duplicate points
 - [iD] List the extension's shortcuts (Shift+Q, Shift+W, Shift+S) in iD's keyboard shortcuts panel
 
 ### `0.14.0` (2026-10-12)

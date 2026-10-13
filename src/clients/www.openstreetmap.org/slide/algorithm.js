@@ -642,7 +642,7 @@ async function trace(raster, start, end, originalStart, originalEnd, radius, opt
     supportedLength < Math.min(20 / options.scale, totalLength * 0.5)
   ) {
     throw noSignal(
-      'No continuous nearby heatmap trail found. Add a guide vertex to select the intended trail.'
+      'No usable heatmap trail found near this line. Draw it closer to the trail, or double-click the line to add a point on the trail you want.'
     );
   }
   return points;
@@ -771,7 +771,7 @@ export async function slideLine(locations, raster, options = {}) {
         Math.abs(p[0]) > 180
     )
   ) {
-    throw new Error('Slide requires between 2 and 1000 valid line vertices.');
+    throw new Error('Slide works on 2 to 1000 points of a line.');
   }
   options = { yield: () => new Promise((resolve) => setTimeout(resolve, 0)), ...options };
   checkAbort(options.signal);
@@ -967,7 +967,7 @@ export async function slideLine(locations, raster, options = {}) {
   result.skipped = traced.filter((ok, i) => i && !ok).length;
   if (result.skipped === originals.length - 1) {
     throw noSignal(
-      'No continuous nearby heatmap trail found. Add a guide vertex to select the intended trail.'
+      'No usable heatmap trail found near this line. Draw it closer to the trail, or double-click the line to add a point on the trail you want.'
     );
   }
   for (let i = 1; i < originals.length; i++) {

@@ -835,6 +835,17 @@ export async function slideLine(locations, raster, options = {}) {
       if (anchor) break;
       anchor = snap(tracking, originals[i], r);
     }
+    // The limit is measured from where the vertex was before ANY pass
+    // (options.limitedOrigins), so two passes cannot add up past it.
+    const origin = options.limitedOrigins?.[i];
+    if (
+      anchor &&
+      limited.has(i) &&
+      origin &&
+      Math.hypot(...project(origin, raster.zoom).map((v, k) => v - anchor[k])) >
+        snapRadius
+    )
+      anchor = null;
     if (!anchor && limited.has(i)) {
       anchor = originals[i];
       fixed.add(i);
@@ -1002,6 +1013,11 @@ export async function slideLineTwice(locations, raster, options = {}) {
       ),
       limitedIndices: first.flatMap((record, i) =>
         limited.has(record.nodeIndex) ? [i] : []
+      ),
+      limitedOrigins: Object.fromEntries(
+        first.flatMap((record, i) =>
+          limited.has(record.nodeIndex) ? [[i, locations[record.nodeIndex]]] : []
+        )
       ),
       onProgress: half(0.5),
     }

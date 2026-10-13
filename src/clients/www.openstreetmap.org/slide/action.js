@@ -67,6 +67,24 @@ export function getSlideSelection(graph, ids) {
 // referenced by a relation. Slide treats them as fixed anchors. The range
 // endpoints are protected as well, but separately, because they are special
 // even when untagged: they keep the way connected to the rest of the map.
+// Indices (within the selection) of vertices that must not MOVE: tagged nodes
+// (a ford, gate or crossing marks a specific spot) and relation members keep
+// their position, and so do the range boundaries of a partial selection, which
+// also belong to the unselected rest of the way. Untagged junctions and free
+// way ends may move (within the normal snap radius): moving a junction moves
+// the connected ways with it, like dragging it in iD.
+export function fixedIndices(graph, selection) {
+  const last = selection.nodes.length - 1;
+  return selection.nodes.flatMap((node, i) =>
+    Object.keys(node.tags).length ||
+    graph.parentRelations(node).length ||
+    (i === 0 && selection.start > 0) ||
+    (i === last && selection.end < selection.way.nodes.length - 1)
+      ? [i]
+      : []
+  );
+}
+
 export function protectedIndices(graph, selection) {
   return selection.nodes.flatMap((node, i) =>
     Object.keys(node.tags).length ||
@@ -255,12 +273,10 @@ export function createSlideAction(before, selection, result, nodeFactory) {
     throw new Error('Invalid Slide result. No edits were applied.');
   }
   const originals = points.filter((point) => point.nodeIndex !== null);
+  const fixedNodes = new Set(fixedIndices(before, selection));
   for (const point of originals) {
     const node = selection.nodes[point.nodeIndex];
-    if (
-      protectedNodes.has(point.nodeIndex) &&
-      point.loc.some((v, i) => v !== node.loc[i])
-    ) {
+    if (fixedNodes.has(point.nodeIndex) && point.loc.some((v, i) => v !== node.loc[i])) {
       throw new Error('Slide attempted to move a protected node. No edits were applied.');
     }
   }

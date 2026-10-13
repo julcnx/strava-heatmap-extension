@@ -19,6 +19,7 @@ import {
   cleanSlideResult,
   createSlideAction,
   getSlideSelection,
+  fixedIndices,
   protectedIndices,
   selectionUnchanged,
 } from './action.js';
@@ -188,7 +189,14 @@ export async function setupSlide(context, isAuthenticated) {
         //    put; endpoints are always fixed inside slideLine() itself.
         const raster = createHeatmapRaster(loaded.tiles, loaded.zoom, loaded.bounds);
         const result = await slideLineTwice(locations, raster, {
-          fixedIndices: protectedIndices(graph, selection),
+          fixedIndices: fixedIndices(graph, selection),
+          // Untagged junctions and the range ends may move, but no further
+          // than the normal snap radius.
+          limitedIndices: [
+            0,
+            selection.nodes.length - 1,
+            ...protectedIndices(graph, selection),
+          ],
           signal: controller.signal,
           onProgress: (value) =>
             progress.update('Following heatmap density…', 0.35 + value * 0.65),

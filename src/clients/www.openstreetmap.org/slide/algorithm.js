@@ -815,7 +815,10 @@ export async function slideLine(locations, raster, options = {}) {
   // 1) Discovery surface: locally contrast-normalised density.
   const tracking = await trackingSurface(raster, scale, options);
   const originals = locations.map((loc) => project(loc, raster.zoom));
-  const fixed = new Set([0, locations.length - 1, ...(options.fixedIndices || [])]);
+  // Fixed vertices never move. Limited ones (junctions, way ends) may snap,
+  // but only within the normal radius; with no trail there they stay fixed.
+  const fixed = new Set(options.fixedIndices || []);
+  const limited = new Set(options.limitedIndices || []);
   const snapSearches = searchRadii(snapRadius, maxSnapMeters / scale);
   // 2) Snap every vertex to a trail point ("anchor"). Fixed vertices are their
   //    own anchors, so endpoints and junctions never move. Snapping widens
@@ -828,11 +831,14 @@ export async function slideLine(locations, raster, options = {}) {
     await options.yield();
     checkAbort(options.signal);
     let anchor = fixed.has(i) ? originals[i] : null;
-    for (const r of snapSearches) {
+    for (const r of limited.has(i) ? [snapRadius] : snapSearches) {
       if (anchor) break;
       anchor = snap(tracking, originals[i], r);
     }
-    if (!anchor) {
+    if (!anchor && limited.has(i)) {
+      anchor = originals[i];
+      fixed.add(i);
+    } else if (!anchor) {
       anchor = originals[i];
       unsnapped.add(i);
     }
@@ -942,7 +948,11 @@ export async function slideLine(locations, raster, options = {}) {
     }
     return [points[0], ...points.slice(k)];
   };
-  const result = [{ loc: locations[0].slice(), nodeIndex: 0 }];
+  const locate = (i) =>
+    fixed.has(i) || unsnapped.has(i)
+      ? locations[i].slice()
+      : unproject(anchors[i], raster.zoom);
+  const result = [{ loc: locate(0), nodeIndex: 0 }];
   result.skipped = traced.filter((ok, i) => i && !ok).length;
   if (result.skipped === originals.length - 1) {
     throw noSignal(
@@ -965,10 +975,7 @@ export async function slideLine(locations, raster, options = {}) {
     result.push({
       // Fixed and unsnapped vertices keep their original location verbatim;
       // everything else takes the snapped anchor position.
-      loc:
-        fixed.has(i) || unsnapped.has(i)
-          ? locations[i].slice()
-          : unproject(anchors[i], raster.zoom),
+      loc: locate(i),
       nodeIndex: i,
     });
   }
@@ -984,6 +991,7 @@ export async function slideLineTwice(locations, raster, options = {}) {
   const first = await slideLine(locations, raster, { ...options, onProgress: half(0) });
   if (first.length > 1000) return first;
   const fixed = new Set(options.fixedIndices || []);
+  const limited = new Set(options.limitedIndices || []);
   const second = await slideLine(
     first.map((record) => record.loc),
     raster,
@@ -991,6 +999,9 @@ export async function slideLineTwice(locations, raster, options = {}) {
       ...options,
       fixedIndices: first.flatMap((record, i) =>
         fixed.has(record.nodeIndex) ? [i] : []
+      ),
+      limitedIndices: first.flatMap((record, i) =>
+        limited.has(record.nodeIndex) ? [i] : []
       ),
       onProgress: half(0.5),
     }

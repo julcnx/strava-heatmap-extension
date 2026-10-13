@@ -49,11 +49,13 @@ export function getSlideSelection(graph, ids) {
   } else {
     return null;
   }
+  // Closed lines (a loop, not an area) are allowed: their first and last node
+  // are the same node, which then stays fixed. Any other repeat is ambiguous.
+  const distinct = way.isClosed() ? way.nodes.slice(0, -1) : way.nodes;
   if (
     start === end ||
     way.geometry(graph) !== 'line' ||
-    way.isClosed() ||
-    new Set(way.nodes).size !== way.nodes.length
+    new Set(distinct).size !== distinct.length
   )
     return null;
   const nodeIDs = way.nodes.slice(start, end + 1);
@@ -98,6 +100,7 @@ export function fixedIndices(graph, selection) {
     Object.keys(node.tags).length ||
     graph.parentRelations(node).length ||
     anchorsStructure(node) ||
+    ((i === 0 || i === last) && selection.nodes[0].id === selection.nodes[last].id) ||
     (i === 0 && selection.start > 0) ||
     (i === last && selection.end < selection.way.nodes.length - 1)
       ? [i]

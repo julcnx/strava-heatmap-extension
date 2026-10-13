@@ -6,6 +6,7 @@ import {
   cleanSlideResult,
   createSlideAction,
   fixedIndices,
+  getSlideSelection,
   isStructure,
 } from '../src/clients/www.openstreetmap.org/slide/action.js';
 
@@ -23,6 +24,12 @@ class Way {
   }
   update({ nodes }) {
     return new Way(this.id, nodes, this.tags);
+  }
+  isClosed() {
+    return this.nodes.length > 2 && this.nodes[0] === this.nodes[this.nodes.length - 1];
+  }
+  geometry() {
+    return this.isClosed() && this.tags.area === 'yes' ? 'area' : 'line';
   }
 }
 class Graph {
@@ -210,4 +217,29 @@ test('junctions and endpoints are never deleted; untagged duplicates are', () =>
   assert.deepEqual(after.entity('w').nodes, ['a', 'c']);
   assert.equal(after.hasEntity('b'), undefined);
   assert.ok(after.hasEntity('a') && after.hasEntity('c'));
+});
+
+test('closed lines can be slid; their closing node stays fixed', () => {
+  const nodes = {
+    p: new Node('p', at(0, 0)),
+    q: new Node('q', at(100, 0)),
+    r: new Node('r', at(50, 80)),
+  };
+  const loop = new Way('loop', ['p', 'q', 'r', 'p'], { highway: 'track' });
+  const graph = new Graph({ ...nodes, loop });
+  const selection = getSlideSelection(graph, ['loop']);
+  assert.ok(selection);
+  assert.deepEqual(fixedIndices(graph, selection), [0, 3]);
+  const result = [
+    { loc: at(0, 0), nodeIndex: 0 },
+    { loc: at(100, 3), nodeIndex: 1 },
+    { loc: at(52, 80), nodeIndex: 2 },
+    { loc: at(0, 0), nodeIndex: 3 },
+  ];
+  const after = createSlideAction(graph, selection, result, factory)(graph);
+  assert.deepEqual(after.entity('loop').nodes, ['p', 'q', 'r', 'p']);
+  assert.deepEqual(after.entity('q').loc, at(100, 3));
+
+  const area = new Way('area', ['p', 'q', 'r', 'p'], { area: 'yes' });
+  assert.equal(getSlideSelection(new Graph({ ...nodes, area }), ['area']), null);
 });

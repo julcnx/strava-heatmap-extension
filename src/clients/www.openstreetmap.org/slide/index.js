@@ -373,7 +373,21 @@ export async function setupSlide(context, isAuthenticated) {
     // Resolve the current selection/graph at keypress time, not when the menu
     // was opened: undo, selection changes and partial-way ranges must work too.
     const operation = createOperation(mode.selectedIDs().slice());
-    if (!operation.available()) return;
+    if (!operation.available()) {
+      // Say why, like iD does for its own unavailable operations, except while
+      // typing into the preset search (a capital S is just a letter there).
+      if (!isEmptyPresetSearch(target)) {
+        context
+          .ui()
+          .flash.duration(4000)
+          .iconName('#iD-operation-slide')
+          .iconClass('operation disabled')
+          .label(
+            label('Slide works on a line, or on two or more vertices of one line.')
+          )();
+      }
+      return;
+    }
     event.preventDefault();
     event.stopImmediatePropagation();
     if (operation.disabled()) {

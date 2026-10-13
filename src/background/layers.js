@@ -3,11 +3,11 @@ export async function resetLayerPresets(force = false) {
 	if (layerPresets.length > 0 && !force) return false;
 
 	const defaultLayerPresets = [
-		{ activity: 'all', color: 'hot' },
+		{ activity: 'all', color: 'orange' },
 		{ activity: 'ride', color: 'purple' },
-		{ activity: 'run', color: 'orange' },
+		{ activity: 'run', color: 'sunset' },
 		{ activity: 'water', color: 'blue' },
-		{ activity: 'winter', color: 'gray' },
+		{ activity: 'winter', color: 'highcontrast' },
 	];
 	await setLayerPresets(defaultLayerPresets);
 
@@ -15,6 +15,27 @@ export async function resetLayerPresets(force = false) {
 		'[StravaHeatmapExt] Initializing default layer presets',
 		defaultLayerPresets
 	);
+
+	return true;
+}
+
+// Colors removed from Strava in favor of new palettes (v0.14.0)
+const MIGRATED_COLORS = {
+	hot: 'orange',
+	gray: 'highcontrast',
+};
+
+export async function migrateLayerPresets() {
+	const layerPresets = await getLayerPresets();
+	if (!layerPresets.some(({ color }) => color in MIGRATED_COLORS)) return false;
+
+	const migratedLayerPresets = layerPresets.map(({ activity, color }) => ({
+		activity,
+		color: MIGRATED_COLORS[color] ?? color,
+	}));
+	await setLayerPresets(migratedLayerPresets);
+
+	console.log('[StravaHeatmapExt] Migrated layer presets', migratedLayerPresets);
 
 	return true;
 }

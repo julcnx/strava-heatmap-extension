@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Strava Heatmap [DEV]",
   "description": "Overlay Strava Global Heatmap in iD & GPX.studio editors to reveal popular routes and patterns.",
-  "version": "0.13.8",
+  "version": "0.14.0",
   "homepage_url": "https://github.com/julcnx/strava-heatmap-extension",
   "permissions": [
     "cookies",
@@ -67,12 +67,14 @@
       "resources": [
         "src/clients/common/auth.js",
         "src/clients/common/hash.js",
-        "src/clients/common/layers.js"
+        "src/clients/common/layers.js",
+        "src/clients/common/palettes.js"
       ],
       "matches": ["*://www.openstreetmap.org/*", "*://gpx.studio/*"]
     },
     {
       "resources": [
+        "src/clients/www.openstreetmap.org/colors.js",
         "src/clients/www.openstreetmap.org/id.js",
         "src/clients/www.openstreetmap.org/imagery.js",
         "src/clients/www.openstreetmap.org/index.css",

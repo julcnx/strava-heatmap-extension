@@ -1,5 +1,6 @@
 import { setupAuthStatusChangeListener } from '../common/auth.js';
 import { parseLayerPresets, setupLayerPresetsChangeListener } from '../common/layers.js';
+import { injectHeatmapColorFilters } from './colors.js';
 import { restoreiDContainer, setupiDCoreContextListener } from './id.js';
 import { applyImagery } from './imagery.js';
 import { setupOverlaysListeners } from './overlays.js';
@@ -12,6 +13,8 @@ async function main() {
 
   let authenticated = script.dataset.authenticated === 'true';
   let layerPresets = parseLayerPresets(script.dataset.layers);
+
+  injectHeatmapColorFilters();
 
   setupiDCoreContextListener(async (context) => {
     window.context = context; // DEBUG

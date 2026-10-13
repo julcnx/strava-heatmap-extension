@@ -1,12 +1,27 @@
-// Available color schemes for the heatmap
+// Available color schemes for the heatmap (see palettes.js)
 const COLORS = {
   blue: ['🔵', 'Blue'],
-  hot: ['🔥', 'Hot'],
-  gray: ['⚪', 'Gray'],
   purple: ['🟣', 'Purple'],
-  bluered: ['🔴', 'Blue-Red'],
   orange: ['🟠', 'Orange'],
+  sunset: ['🌅', 'Sunset'],
+  pink: ['🌸', 'Pink'],
+  highcontrast: ['⚪', 'Contrast'],
+  bluered: ['🔴', 'Blue-Red'],
 };
+
+// Closest pre-colored legacy tile flavor, for clients that can't colorize
+// grayscale tiles (gpx.studio)
+const LEGACY_COLORS = {
+  blue: 'blue',
+  purple: 'purple',
+  orange: 'orange',
+  sunset: 'hot',
+  pink: 'hot',
+  highcontrast: 'gray',
+  bluered: 'bluered',
+};
+
+const COLOR_PARAM = 'heatmap-color';
 
 const ACTIVITIES = {
   all: 'All Sports',
@@ -132,7 +147,8 @@ function getLayerConfig(
   timestamp,
   authenticated,
   version,
-  short
+  short,
+  legacy
 ) {
   const activityName = ACTIVITIES[activity];
   const [colorEmoji] = COLORS[color] || '❓';
@@ -143,19 +159,44 @@ function getLayerConfig(
       short ? activityName : `Strava Heatmap ${activityName}`
     }`,
     description: `Shows ${activityName.toLowerCase()} aggregated, public Strava activities over the last year in ${colorEmoji} color.`,
-    template: authenticated
-      ? `https://content-a.strava.com/identified/globalheat/${activity}/${color}/{z}/{x}/{y}.png?v=19&t=${timestamp}`
-      : `https://raw.githubusercontent.com/julcnx/strava-heatmap-extension/refs/heads/v${version}/assets/heatmap-fallback.png?v=1&z={z}&x={x}&y={y}`,
+    template: getTileTemplate(activity, color, timestamp, authenticated, version, legacy),
     zoomExtent: authenticated ? [0, 15] : [0, 20],
   };
 }
 
+// Grayscale tiles are colorized client-side; the color param is ignored by Strava
+// and lets the client match tiles to their palette (see www.openstreetmap.org/index.css)
+function getTileTemplate(activity, color, timestamp, authenticated, version, legacy) {
+  if (!authenticated) {
+    return `https://raw.githubusercontent.com/julcnx/strava-heatmap-extension/refs/heads/v${version}/assets/heatmap-fallback.png?v=1&z={z}&x={x}&y={y}`;
+  }
+  if (legacy) {
+    return `https://content-a.strava.com/identified/globalheat/${activity}/${LEGACY_COLORS[color]}/{z}/{x}/{y}.png?v=19&t=${timestamp}`;
+  }
+  return `https://content-a.strava.com/identified/globalheat/${activity}/grayscale/{z}/{x}/{y}.png?v=20&missing=empty&${COLOR_PARAM}=${color}&t=${timestamp}`;
+}
+
 // Generates layer options with optional callback for extension
-export function getLayerConfigs(layerPresets, authenticated, version, short = false) {
+export function getLayerConfigs(
+  layerPresets,
+  authenticated,
+  version,
+  short = false,
+  legacy = false
+) {
   const timestamp = Date.now().toString();
 
   return layerPresets.map(({ activity, color }, index) =>
-    getLayerConfig(index + 1, activity, color, timestamp, authenticated, version, short)
+    getLayerConfig(
+      index + 1,
+      activity,
+      color,
+      timestamp,
+      authenticated,
+      version,
+      short,
+      legacy
+    )
   );
 }
 

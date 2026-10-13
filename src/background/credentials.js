@@ -13,7 +13,7 @@ const STRAVA_COOKIE_NAMES = [
 ];
 
 const VALIDATION_TILE_URL =
-  'https://content-a.strava.com/identified/globalheat/all/hot/8/198/114.png?v=19';
+  'https://content-a.strava.com/identified/globalheat/all/grayscale/8/198/114.png?v=20';
 
 export async function validateCredentials() {
   return new Promise(async (resolve) => {

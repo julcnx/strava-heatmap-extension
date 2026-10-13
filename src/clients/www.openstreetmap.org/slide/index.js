@@ -279,7 +279,7 @@ export async function setupSlide(context, isAuthenticated) {
             .ui()
             .flash.duration(7000)
             .iconName('#iD-operation-slide')
-            .iconClass('operation disabled')
+            .iconClass('operation disabled strava-slide-error')
             .label(label(error.message || 'Slide failed. No edits were applied.'))();
         }
       } finally {
@@ -381,7 +381,7 @@ export async function setupSlide(context, isAuthenticated) {
           .ui()
           .flash.duration(4000)
           .iconName('#iD-operation-slide')
-          .iconClass('operation disabled')
+          .iconClass('operation disabled strava-slide-error')
           .label(
             label('Slide works on a line, or on two or more vertices of one line.')
           )();
@@ -396,7 +396,7 @@ export async function setupSlide(context, isAuthenticated) {
         .ui()
         .flash.duration(4000)
         .iconName('#iD-operation-slide')
-        .iconClass('operation disabled')
+        .iconClass('operation disabled strava-slide-error')
         .label(label(operation.tooltip()))();
       return;
     }

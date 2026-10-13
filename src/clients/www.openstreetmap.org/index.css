@@ -94,3 +94,9 @@ body {
 .strava-slide-dialog button:focus-visible {
   outline: 2px solid #7092ff;
 }
+
+/* Slide refusals in iD's bottom bar (see slide/index.js) */
+.flash-content:has(.strava-slide-error) .flash-text,
+.flash-icon.strava-slide-error {
+  color: #ff7a6b;
+}

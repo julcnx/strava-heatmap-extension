@@ -136,7 +136,107 @@ function distanceMeters(a, b) {
 //
 // The function is idempotent — cleaning an already-clean result changes
 // nothing — so both index.js and createSlideAction() may call it safely.
-export function cleanSlideResult(before, selection, result) {
+// Planar metres around `origin` (equirectangular), for the short distances
+// compared below.
+function toMeters(loc, origin) {
+  return [
+    (loc[0] - origin[0]) * Math.cos((origin[1] * Math.PI) / 180) * 111319.49,
+    (loc[1] - origin[1]) * 110574,
+  ];
+}
+function fromMeters(point, origin) {
+  return [
+    origin[0] + point[0] / (Math.cos((origin[1] * Math.PI) / 180) * 111319.49),
+    origin[1] + point[1] / 110574,
+  ];
+}
+function nearestOnSegment(p, a, b) {
+  const dx = b[0] - a[0],
+    dy = b[1] - a[1],
+    length = dx * dx + dy * dy;
+  const t = length
+    ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length))
+    : 0;
+  return { t, point: [a[0] + t * dx, a[1] + t * dy] };
+}
+
+// Near a junction both trails share heat, so the slid line may run along the
+// other way before reaching the junction, leaving the two ways on top of each
+// other. From each junction, drop the slid vertices lying within CLOSE_METERS
+// of the other way, and — when the junction may move — slide the junction
+// along the other way's own segment to where the slid line leaves it, so the
+// other way keeps its shape.
+function trimJunctionOverlaps(before, selection, result) {
+  const protectedIndexes = new Set([
+    0,
+    selection.nodes.length - 1,
+    ...protectedIndices(before, selection),
+  ]);
+  const fixed = new Set(fixedIndices(before, selection));
+  const removable = (point) =>
+    point.nodeIndex === null || !protectedIndexes.has(point.nodeIndex);
+  let points = result.map((point) => ({ ...point, loc: point.loc.slice() }));
+  for (let index = 0; index < selection.nodes.length; index++) {
+    const node = selection.nodes[index];
+    for (const other of before.parentWays(node)) {
+      if (other.id === selection.way.id) continue;
+      if (!points.some((point) => point.nodeIndex === index)) continue;
+      const origin = node.loc;
+      const line = before.childNodes(other).map((n) => toMeters(n.loc, origin));
+      const distance = (loc) =>
+        Math.min(
+          ...line.slice(1).map((b, k) => {
+            const p = toMeters(loc, origin);
+            const q = nearestOnSegment(p, line[k], b).point;
+            return Math.hypot(p[0] - q[0], p[1] - q[1]);
+          })
+        );
+      for (const step of [-1, 1]) {
+        const r = points.findIndex((point) => point.nodeIndex === index);
+        let k = r + step;
+        while (
+          k > 0 &&
+          k < points.length - 1 &&
+          removable(points[k]) &&
+          distance(points[k].loc) < CLOSE_METERS
+        )
+          k += step;
+        const overlap = Math.abs(k - r) - 1;
+        if (overlap <= 0) continue;
+        const last = points[k - step];
+        if (!fixed.has(index)) {
+          // Slide the junction along its own segments of the other way, up
+          // to 1 m short of the neighbouring node, to where the line leaves.
+          const p = toMeters(last.loc, origin);
+          let best;
+          other.nodes.forEach((id, n) => {
+            if (id !== node.id) return;
+            for (const m of [n - 1, n + 1]) {
+              const neighbour = before.hasEntity(other.nodes[m]);
+              if (!neighbour) continue;
+              const b = toMeters(neighbour.loc, origin);
+              const length = Math.hypot(b[0], b[1]);
+              if (length < 2) continue;
+              const { t, point } = nearestOnSegment(p, [0, 0], b);
+              const capped = Math.min(t, 1 - 1 / length);
+              const candidate = [b[0] * capped, b[1] * capped];
+              const d = Math.hypot(p[0] - point[0], p[1] - point[1]);
+              if (!best || d < best.d) best = { d, loc: fromMeters(candidate, origin) };
+            }
+          });
+          if (best) points[r].loc = best.loc;
+        }
+        const from = Math.min(r + step, k - step),
+          to = Math.max(r + step, k - step);
+        points = points.filter((_, i) => i < from || i > to);
+      }
+    }
+  }
+  return points;
+}
+
+export function cleanSlideResult(before, selection, input) {
+  const result = trimJunctionOverlaps(before, selection, input);
   const protectedIndexes = new Set([
     0,
     selection.nodes.length - 1,

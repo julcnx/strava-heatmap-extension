@@ -269,6 +269,8 @@ export async function setupSlide(context, isAuthenticated) {
           context
             .ui()
             .flash.duration(7000)
+            .iconName('#iD-operation-slide')
+            .iconClass('operation disabled')
             .label(label(error.message || 'Slide failed. No edits were applied.'))();
         }
       } finally {
@@ -365,7 +367,13 @@ export async function setupSlide(context, isAuthenticated) {
     event.preventDefault();
     event.stopImmediatePropagation();
     if (operation.disabled()) {
-      context.ui().flash.duration(4000).label(label(operation.tooltip()))();
+      // Same refusal style as iD's own operations (behavior/operation.js).
+      context
+        .ui()
+        .flash.duration(4000)
+        .iconName('#iD-operation-slide')
+        .iconClass('operation disabled')
+        .label(label(operation.tooltip()))();
       return;
     }
     context.ui().closeEditMenu();

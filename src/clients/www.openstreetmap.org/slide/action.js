@@ -103,6 +103,9 @@ export function protectedIndices(graph, selection) {
 // compared, so the two legs of a tight hairpin are never merged.
 const CLOSE_METERS = 4;
 const ALONG_LINE_METERS = 2 * CLOSE_METERS;
+// Next to a junction, a slid vertex this close to the other way is still on
+// that way's trail: a trail leaving a junction diverges from the other way.
+const OVERLAP_METERS = 2 * CLOSE_METERS;
 // A single vertex where the line turns back by more than this is a spike (a
 // vertex snapped onto a neighbouring trail): a real switchback traced by Slide
 // has a rounded apex made of several gentler vertices.
@@ -162,7 +165,7 @@ function nearestOnSegment(p, a, b) {
 
 // Near a junction both trails share heat, so the slid line may run along the
 // other way before reaching the junction, leaving the two ways on top of each
-// other. From each junction, drop the slid vertices lying within CLOSE_METERS
+// other. From each junction, drop the slid vertices lying within OVERLAP_METERS
 // of the other way, and — when the junction may move — slide the junction
 // along the other way's own segment to where the slid line leaves it, so the
 // other way keeps its shape.
@@ -198,7 +201,7 @@ function trimJunctionOverlaps(before, selection, result) {
           k > 0 &&
           k < points.length - 1 &&
           removable(points[k]) &&
-          distance(points[k].loc) < CLOSE_METERS
+          distance(points[k].loc) < OVERLAP_METERS
         )
           k += step;
         const overlap = Math.abs(k - r) - 1;

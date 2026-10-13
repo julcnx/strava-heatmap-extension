@@ -100,7 +100,6 @@ export function fixedIndices(graph, selection) {
     Object.keys(node.tags).length ||
     graph.parentRelations(node).length ||
     anchorsStructure(node) ||
-    ((i === 0 || i === last) && selection.nodes[0].id === selection.nodes[last].id) ||
     (i === 0 && selection.start > 0) ||
     (i === last && selection.end < selection.way.nodes.length - 1)
       ? [i]
@@ -230,7 +229,12 @@ function trimJunctionOverlaps(before, selection, result) {
         const overlap = Math.abs(k - r) - 1;
         if (overlap <= 0) continue;
         const last = points[k - step];
-        if (!fixed.has(index)) {
+        // A loop's closing node appears at both ends: sliding one copy along
+        // the other way would split it, so it is only trimmed around.
+        const closing =
+          selection.nodes[0].id === selection.nodes[selection.nodes.length - 1].id &&
+          (index === 0 || index === selection.nodes.length - 1);
+        if (!fixed.has(index) && !closing) {
           // Slide the junction along its own segments of the other way, up
           // to 1 m short of the neighbouring node, to where the line leaves.
           const p = toMeters(last.loc, origin);
@@ -397,6 +401,14 @@ export function createSlideAction(before, selection, result, nodeFactory) {
     )
   ) {
     throw new Error('Invalid Slide result. No edits were applied.');
+  }
+  // A loop's closing node is listed at both ends and must end up in one place.
+  const lastIndex = selection.nodes.length - 1;
+  if (
+    selection.nodes[0].id === selection.nodes[lastIndex].id &&
+    points[0].loc.some((v, i) => v !== points[points.length - 1].loc[i])
+  ) {
+    throw new Error('Invalid Slide result for a closed line. No edits were applied.');
   }
   const originals = points.filter((point) => point.nodeIndex !== null);
   const fixedNodes = new Set(fixedIndices(before, selection));

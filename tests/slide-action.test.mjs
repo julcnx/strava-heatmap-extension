@@ -219,7 +219,7 @@ test('junctions and endpoints are never deleted; untagged duplicates are', () =>
   assert.ok(after.hasEntity('a') && after.hasEntity('c'));
 });
 
-test('closed lines can be slid; their closing node stays fixed', () => {
+test('closed lines can be slid; the closing node moves as one', () => {
   const nodes = {
     p: new Node('p', at(0, 0)),
     q: new Node('q', at(100, 0)),
@@ -229,16 +229,19 @@ test('closed lines can be slid; their closing node stays fixed', () => {
   const graph = new Graph({ ...nodes, loop });
   const selection = getSlideSelection(graph, ['loop']);
   assert.ok(selection);
-  assert.deepEqual(fixedIndices(graph, selection), [0, 3]);
+  assert.deepEqual(fixedIndices(graph, selection), []); // untagged closing node may move
   const result = [
-    { loc: at(0, 0), nodeIndex: 0 },
+    { loc: at(2, 1), nodeIndex: 0 },
     { loc: at(100, 3), nodeIndex: 1 },
     { loc: at(52, 80), nodeIndex: 2 },
-    { loc: at(0, 0), nodeIndex: 3 },
+    { loc: at(2, 1), nodeIndex: 3 },
   ];
   const after = createSlideAction(graph, selection, result, factory)(graph);
   assert.deepEqual(after.entity('loop').nodes, ['p', 'q', 'r', 'p']);
-  assert.deepEqual(after.entity('q').loc, at(100, 3));
+  assert.deepEqual(after.entity('p').loc, at(2, 1));
+
+  const split = result.map((p, i) => (i === 3 ? { ...p, loc: at(0, 0) } : p));
+  assert.throws(() => createSlideAction(graph, selection, split, factory), /closed line/);
 
   const area = new Way('area', ['p', 'q', 'r', 'p'], { area: 'yes' });
   assert.equal(getSlideSelection(new Graph({ ...nodes, area }), ['area']), null);

@@ -855,6 +855,23 @@ export async function slideLine(locations, raster, options = {}) {
     }
     anchors.push(anchor);
   }
+  // A closed line starts and ends on the same node: both ends must share one
+  // position and status, so the last copies the first.
+  const last = originals.length - 1;
+  const closed =
+    last > 1 &&
+    locations[0][0] === locations[last][0] &&
+    locations[0][1] === locations[last][1];
+  const twin = (v) => (closed && v === 0 ? last : closed && v === last ? 0 : -1);
+  if (closed) {
+    if (fixed.has(0) || fixed.has(last)) {
+      fixed.add(0);
+      fixed.add(last);
+      anchors[0] = originals[0];
+    }
+    if (unsnapped.has(0)) unsnapped.add(last);
+    anchors[last] = anchors[0];
+  }
   // 3) Trace the ridge from anchor to anchor, segment by segment. Each segment
   //    is simplified on its own and contributes: the interior simplified
   //    vertices (slide-created, nodeIndex null) followed by the segment's end
@@ -920,12 +937,14 @@ export async function slideLine(locations, raster, options = {}) {
       if (paths[i]) continue;
       for (const v of [i - 1, i]) {
         if (fixed.has(v) || unsnapped.has(v)) continue;
-        unsnapped.add(v);
-        anchors[v] = originals[v];
+        for (const w of twin(v) < 0 ? [v] : [v, twin(v)]) {
+          unsnapped.add(w);
+          anchors[w] = originals[w];
+          if (w > 0 && paths[w]) paths[w] = await retraceSection(w);
+          if (w + 1 < originals.length && paths[w + 1])
+            paths[w + 1] = await retraceSection(w + 1);
+        }
         changed = true;
-        if (v > 0 && paths[v]) paths[v] = await retraceSection(v);
-        if (v + 1 < originals.length && paths[v + 1])
-          paths[v + 1] = await retraceSection(v + 1);
       }
     }
   }

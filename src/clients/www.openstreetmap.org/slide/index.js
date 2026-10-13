@@ -1,5 +1,22 @@
+/**
+ * iD integration for Strava Slide.
+ *
+ * This module is the only one that talks to the editor. Its responsibilities:
+ *   * register Slide in iD's context menu and on Shift+S,
+ *   * show the progress / heatmap-chooser dialog,
+ *   * run the pipeline: tiles.js (download) → png.js (decode, via tiles.js) →
+ *     algorithm.js (fit the line to the heatmap) → action.js (graph edit), and
+ *   * guard against races: the user editing while Slide runs, and iD
+ *     rebuilding its UI with node IDs that Slide just deleted.
+ *
+ * iD (the openstreetmap.org editor) exposes itself as window.iD and drives
+ * everything through a `context` object — context.graph(), context.mode(),
+ * context.perform(), context.keybinding() and so on. We only use that public
+ * surface, so nothing here depends on iD's internals.
+ */
 import { createHeatmapRaster, slideLine } from './algorithm.js';
 import {
+  cleanSlideResult,
   createSlideAction,
   getSlideSelection,
   protectedIndices,
@@ -7,12 +24,19 @@ import {
 } from './action.js';
 import { loadSlideTiles, slideTileURL } from './tiles.js';
 
+// iD expects menu labels to be functions that append text to a d3 selection;
+// giving the function a toString() keeps the plain text usable in tooltips,
+// flash messages and log output.
 function label(text) {
   const append = (selection) => selection.text(text);
   append.toString = () => text;
   return append;
 }
 
+// Put the Slide icon into a hidden SVG sprite as a <symbol>. iD renders
+// operation icons with <use href="#iD-operation-slide">, the same ID its own
+// operations use, which is how our entry claims the native icon slot in the
+// context menu. The icon itself uses currentColor, so it follows iD's theme.
 async function installIcon() {
   if (document.getElementById('iD-operation-slide')) return;
   const url = new URL('../../../../icons/slide.svg', import.meta.url);
@@ -34,6 +58,10 @@ async function installIcon() {
   document.body.append(sprite);
 }
 
+// Modal dialog with a progress bar. When several Strava heatmap overlays are
+// enabled, the user first picks which activity to follow (chooseSource());
+// with exactly one overlay that step is skipped. Returns small controls for
+// the caller: chooseSource(), update(text, value) and close().
 function showProgress(context, controller, sources) {
   const dialog = document.createElement('dialog');
   dialog.className = 'strava-slide-dialog';
@@ -49,8 +77,9 @@ function showProgress(context, controller, sources) {
   cancel.type = 'button';
   cancel.textContent = 'Cancel';
   cancel.addEventListener('click', () => controller.abort());
-  // Keep iD's map gestures, click-default suppression and keyboard operations
-  // out of the modal (particularly its native activity select control).
+  // Modal dialogs suppress iD's global event handling (its keyboard shortcuts
+  // would fire while typing, and map gestures would leak through). Suppress
+  // those events here instead of letting them reach iD.
   for (const type of ['click', 'pointerdown', 'pointerup', 'mousedown', 'keydown']) {
     dialog.addEventListener(type, (event) => event.stopPropagation());
   }
@@ -109,14 +138,24 @@ function showProgress(context, controller, sources) {
   };
 }
 
+// Called once by the extension after iD has booted. `isAuthenticated` reports
+// the Strava login state of the extension (the tile requests would come back
+// 401 without it).
 export async function setupSlide(context, isAuthenticated) {
   await installIcon();
   let busy = false;
   const shortcut = window.iD.uiCmd('⇧S');
 
+  // Create the iD operation ("Slide") for the given selected IDs. iD asks
+  // available()/disabled() whenever the context menu opens or a shortcut is
+  // pressed; running the operation performs the whole pipeline. `ids` is
+  // captured at that moment so undo/redo and partial-way selections always refer
+  // to the selection the user actually acted on.
   function createOperation(ids) {
     const operation = async () => {
       if (operation.disabled()) return;
+      // Snapshot the graph: everything is computed against this state, and
+      // action.js refuses to apply the edit if it no longer matches.
       const graph = context.graph();
       const selection = getSlideSelection(graph, ids);
       const controller = new AbortController();
@@ -127,6 +166,8 @@ export async function setupSlide(context, isAuthenticated) {
         progress = showProgress(context, controller, sources);
         const source = await progress.chooseSource();
         const locations = selection.nodes.map((node) => node.loc);
+        // 1. Tiles: downloaded and decoded to ordered heat density (tiles.js /
+        //    png.js), buffered by the widest search radius the algorithm uses.
         const loaded = await loadSlideTiles(
           locations,
           source,
@@ -134,6 +175,9 @@ export async function setupSlide(context, isAuthenticated) {
           (value) => progress.update('Loading heatmap…', value * 0.35)
         );
         progress.update('Following heatmap density…', 0.35);
+        // 2. Merge the tiles into one raster and 3. fit the line to it. Fixed
+        //    indices (tagged nodes, junctions) are passed along so they stay
+        //    put; endpoints are always fixed inside slideLine() itself.
         const raster = createHeatmapRaster(loaded.tiles, loaded.zoom, loaded.bounds);
         const result = await slideLine(locations, raster, {
           fixedIndices: protectedIndices(graph, selection),
@@ -149,15 +193,48 @@ export async function setupSlide(context, isAuthenticated) {
             'The editor or Strava session is no longer available. Please try again.'
           );
         }
-        context.perform(
-          createSlideAction(
-            graph,
-            selection,
-            result,
-            (attrs) => new window.iD.osmNode(attrs)
-          ),
-          'Slide along Strava heatmap'
+        // 4. Clean up duplicate vertices (action.js holds the rules) and turn
+        //    the result into an undoable graph edit.
+        const cleaned = cleanSlideResult(graph, selection, result);
+        const action = createSlideAction(
+          graph,
+          selection,
+          cleaned,
+          (attrs) => new window.iD.osmNode(attrs)
         );
+        // iD rebuilds its select-mode operations synchronously on history
+        // changes. Drop IDs of cleaned-up selected vertices first, so it never
+        // dereferences a deleted node. Range endpoints (and the way) survive.
+        const retained = new Set(
+          cleaned
+            .filter((point) => point.nodeIndex !== null)
+            .map((point) => selection.nodes[point.nodeIndex].id)
+        );
+        const mode = context.mode();
+        let previousSelection;
+        if (mode?.id === 'select') {
+          const current = mode.selectedIDs();
+          const selected = current.filter(
+            (id) => !selection.nodes.some((node) => node.id === id) || retained.has(id)
+          );
+          if (selected.length !== current.length) {
+            previousSelection = current.slice();
+            mode.selectedIDs(selected);
+          }
+        }
+        try {
+          context.perform(action, 'Slide along Strava heatmap');
+        } catch (error) {
+          // If the action failed, no node was deleted — restore the old
+          // selection so the user's context is not lost.
+          if (
+            previousSelection &&
+            previousSelection.every((id) => context.graph().hasEntity(id))
+          ) {
+            mode.selectedIDs(previousSelection);
+          }
+          throw error;
+        }
         context.validator().validate();
       } catch (error) {
         if (error.name !== 'AbortError') {
@@ -178,6 +255,9 @@ export async function setupSlide(context, isAuthenticated) {
     operation.title = label('Slide');
     operation.annotation = () => 'Slide along Strava heatmap';
     operation.available = () => Boolean(getSlideSelection(context.graph(), ids));
+    // Preconditions, each mapped to a message the user can act on. They are
+    // re-evaluated on every menu render because the state can change while
+    // the menu is open (login, enabled overlays, downloaded data …).
     operation.disabled = () => {
       if (busy) return 'Slide is already running.';
       const selection = getSlideSelection(context.graph(), ids);
@@ -210,11 +290,15 @@ export async function setupSlide(context, isAuthenticated) {
       return false;
     };
     operation.tooltip = () =>
+      // While disabled, iD shows the reason instead of the tooltip text.
       operation.disabled() ||
-      'Slide the selected line or vertex range along the Strava heatmap (Shift+S).';
+      'Slide the selected line or vertex range along the Strava heatmap (Shift+S). Removes redundant vertices closer than 1 m; Undo restores them.';
     return operation;
   }
 
+  // The extension registers each Strava overlay as a background layer whose id
+  // starts with "strava-heatmap-"; those are the candidate heatmap sources, and
+  // the user picks one in the dialog when several are enabled.
   function heatmapSources() {
     return context
       .background()
@@ -222,6 +306,9 @@ export async function setupSlide(context, isAuthenticated) {
       .filter((source) => source.id.startsWith('strava-heatmap-'));
   }
 
+  // Shift+S handler. iD's bundled operation registry cannot be extended from
+  // the outside, so the shortcut is bound here and runs the operation directly
+  // (see attach() for the matching context-menu integration).
   function keypress(event) {
     if (
       event.defaultPrevented ||
@@ -261,6 +348,8 @@ export async function setupSlide(context, isAuthenticated) {
   // does not register a new operation. Wrap each select mode's public accessor
   // instead, so the native edit menu positions, renders and invokes Slide.
   const wrapped = new WeakSet();
+  // Hook a fresh select mode: bind ⇧S and splice Slide into the operations iD
+  // renders in the context menu (just before "Delete", with the line tools).
   function attach() {
     // The context binding gives ⇧S priority over native S (Straighten), while
     // leaving unshifted S untouched. ui.restart() clears bindings and enters

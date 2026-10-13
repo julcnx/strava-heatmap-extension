@@ -1,13 +1,40 @@
-// Slide's PNG density decoder. Strava stores heat levels as ordered 8-bit PNG
-// palette indices. Colors are presentation, not density: even "gray" is
-// non-monotonic in brightness. Decode the indices before any canvas conversion
-// (which also rounds premultiplied colors/alpha and discards the indices).
+/**
+ * Decode Strava heatmap PNG tiles into ordered heat density.
+ *
+ * Strava encodes each heatmap tile as an 8-bit *indexed-colour* PNG: a pixel
+ * stores a palette index, and the palette's alpha ramp (the tRNS chunk) is
+ * ordered from transparent (coldest) to opaque (hottest). That index IS the
+ * heat level — the colour is only how the heatmap is displayed.
+ *
+ * Why not simply draw the tile onto a <canvas> and read back RGBA? The
+ * browser converts indexed colour to presentation colour: values are
+ * premultiplied by alpha, rounded, and the index order is lost. Some Strava
+ * palettes are even non-monotonic in brightness (the "gray" palette becomes
+ * *darker* again at the hottest levels), so brightness cannot be mapped back
+ * to heat. We therefore parse the PNG ourselves and keep the raw indices.
+ *
+ * PNG primer for the code below. A file is an 8-byte signature followed by
+ * chunks laid out as "length | type | data | CRC":
+ *   IHDR – image header (dimensions, bit depth, colour type)
+ *   PLTE – the colour palette (256 × RGB for indexed images)
+ *   tRNS – per-index transparency (here: Strava's ordered heat ramp)
+ *   IDAT – zlib-compressed pixel data
+ *   IEND – end marker
+ * Indexed images store one palette index per pixel, and every row is prefixed
+ * by a filter byte describing how that row's bytes were predictively encoded
+ * (PNG filters reduce file size; they must be undone here).
+ */
 const SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 
+// Cooperative cancellation (see algorithm.js): a cancelled decode throws an
+// 'AbortError', which the caller treats as "user cancelled", not as a failure.
 function checkAbort(signal) {
   if (signal?.aborted) throw new DOMException('Slide cancelled.', 'AbortError');
 }
 
+// The Paeth predictor from the PNG specification: pick the neighbour
+// (a = left, b = above, c = upper-left) whose value lies closest to the
+// straight-line prediction through the other two.
 function paeth(a, b, c) {
   const p = a + b - c;
   const pa = Math.abs(p - a),
@@ -16,6 +43,8 @@ function paeth(a, b, c) {
   return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
 }
 
+// Decode one heatmap tile. Returns { width, height, density } where density
+// is a Float32Array of heat levels 0..1 (palette index / 255).
 export async function decodeHeatmapPNG(bytes, signal) {
   checkAbort(signal);
   bytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -29,6 +58,8 @@ export async function decodeHeatmapPNG(bytes, signal) {
     alpha,
     ended = false;
   const compressed = [];
+  // Walk the chunk list; `offset` always sits at a chunk header and steps over
+  // length (4) + type (4) + data + CRC (4).
   for (let offset = 8; offset < bytes.length; ) {
     if (offset + 12 > bytes.length) throw new Error('Truncated heatmap PNG.');
     const length = view.getUint32(offset);
@@ -45,11 +76,11 @@ export async function decodeHeatmapPNG(bytes, signal) {
         !width ||
         !height ||
         width * height > 4000000 ||
-        data[8] !== 8 ||
-        data[9] !== 3 ||
-        data[10] ||
-        data[11] ||
-        data[12]
+        data[8] !== 8 || // bit depth: 8 bits per palette index
+        data[9] !== 3 || // colour type: 3 = indexed (palette)
+        data[10] || // compression method: 0 = deflate
+        data[11] || // filter method: 0 = adaptive
+        data[12] // interlace method: 0 = none (interlaced tiles unsupported)
       ) {
         throw new Error(
           'Unsupported heatmap PNG. Expected a non-interlaced, indexed 8-bit Strava tile.'
@@ -67,8 +98,10 @@ export async function decodeHeatmapPNG(bytes, signal) {
     }
     offset += length + 12;
   }
-  // Do not silently interpret an arbitrary/reordered image palette as heat.
-  // Strava's 256-entry palette has opacity increasing with its heat index.
+  // Refuse to interpret an arbitrary or reordered palette as heat. Strava's
+  // encoding is recognisable: exactly 256 RGB entries and a 256-step alpha
+  // ramp that starts transparent, ends opaque and never decreases — that ramp
+  // is the monotonic "heat" ordering the rest of Slide relies on.
   if (
     !ended ||
     !width ||
@@ -88,8 +121,12 @@ export async function decodeHeatmapPNG(bytes, signal) {
       'Slide needs a browser with PNG decompression support. Please update your browser.'
     );
   }
+  // `raw` will hold height rows of (1 filter byte + width index bytes).
   const expectedLength = (width + 1) * height;
   const raw = new Uint8Array(expectedLength);
+  // Inflate the concatenated IDAT data with the browser's built-in
+  // DecompressionStream — no dependencies, and streamed so large tiles do not
+  // have to be buffered twice.
   const stream = new Blob(compressed)
     .stream()
     .pipeThrough(new DecompressionStream('deflate'));
@@ -118,6 +155,10 @@ export async function decodeHeatmapPNG(bytes, signal) {
   }
   if (offset !== expectedLength)
     throw new Error('Heatmap PNG has incomplete pixel data.');
+  // Undo the per-row PNG filters. Each byte was stored as
+  // (index + prediction of already-decoded neighbours) mod 256, where the
+  // prediction depends on the row's filter byte; adding it back recovers the
+  // palette indices. Those indices ARE the heat: density = index / 255.
   const indices = new Uint8Array(width * height);
   const density = new Float32Array(indices.length);
   for (let y = 0; y < height; y++) {
@@ -127,6 +168,8 @@ export async function decodeHeatmapPNG(bytes, signal) {
     if (filter > 4) throw new Error('Invalid heatmap PNG filter.');
     for (let x = 0; x < width; x++) {
       const i = y * width + x;
+      // Neighbours already reconstructed in this and the previous row:
+      // a = left, b = above, c = upper-left diagonal.
       const a = x ? indices[i - 1] : 0;
       const b = y ? indices[i - width] : 0;
       const c = x && y ? indices[i - width - 1] : 0;

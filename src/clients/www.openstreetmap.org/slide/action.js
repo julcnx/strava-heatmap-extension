@@ -73,11 +73,31 @@ export function getSlideSelection(graph, ids) {
 // also belong to the unselected rest of the way. Untagged junctions and free
 // way ends may move (within the normal snap radius): moving a junction moves
 // the connected ways with it, like dragging it in iD.
+// Bridges and tunnels are mapped to the structure, not to the heat, and on a
+// short way moving one end by a few metres is a large distortion.
+export function isStructure(way) {
+  return ['bridge', 'tunnel'].some((key) => way.tags[key] && way.tags[key] !== 'no');
+}
+const SHORT_WAY_METERS = 40;
+function wayLength(graph, way) {
+  const locs = graph.childNodes(way).map((node) => node.loc);
+  return locs.slice(1).reduce((sum, loc, i) => sum + distanceMeters(locs[i], loc), 0);
+}
+
 export function fixedIndices(graph, selection) {
   const last = selection.nodes.length - 1;
+  const anchorsStructure = (node) =>
+    graph
+      .parentWays(node)
+      .some(
+        (way) =>
+          way.id !== selection.way.id &&
+          (isStructure(way) || wayLength(graph, way) < SHORT_WAY_METERS)
+      );
   return selection.nodes.flatMap((node, i) =>
     Object.keys(node.tags).length ||
     graph.parentRelations(node).length ||
+    anchorsStructure(node) ||
     (i === 0 && selection.start > 0) ||
     (i === last && selection.end < selection.way.nodes.length - 1)
       ? [i]

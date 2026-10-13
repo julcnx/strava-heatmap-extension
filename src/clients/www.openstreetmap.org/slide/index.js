@@ -20,6 +20,7 @@ import {
   createSlideAction,
   getSlideSelection,
   fixedIndices,
+  isStructure,
   protectedIndices,
   selectionUnchanged,
 } from './action.js';
@@ -315,6 +316,7 @@ export async function setupSlide(context, isAuthenticated) {
       }
       if (selection.nodes.length > 1000)
         return 'Select a shorter section (at most 1000 vertices).';
+      if (isStructure(selection.way)) return 'Slide does not move bridges or tunnels.';
       const connection = context.connection();
       if (
         selection.nodes.some((node) => connection && !connection.isDataLoaded(node.loc))

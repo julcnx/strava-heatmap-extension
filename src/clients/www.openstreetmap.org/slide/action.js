@@ -85,6 +85,10 @@ export function protectedIndices(graph, selection) {
 // compared, so the two legs of a tight hairpin are never merged.
 const CLOSE_METERS = 4;
 const ALONG_LINE_METERS = 2 * CLOSE_METERS;
+// A single vertex where the line turns back by more than this is a spike (a
+// vertex snapped onto a neighbouring trail): a real switchback traced by Slide
+// has a rounded apex made of several gentler vertices.
+const SPIKE_TURN_DEGREES = 150;
 
 // Approximate ground distance in metres, using an equirectangular projection
 // at the pair's mean latitude. Accurate to far better than 1 % over the tiny
@@ -145,7 +149,36 @@ export function cleanSlideResult(before, selection, result) {
       dropped.add(a < b ? i : j);
     }
   }
-  return result.filter((_, index) => !dropped.has(index));
+  // Remove spikes, sharpest first, until none are left.
+  let kept = result.map((_, index) => index).filter((index) => !dropped.has(index));
+  const turn = (a, b, c) => {
+    const meanLat = (result[b].loc[1] * Math.PI) / 180;
+    const vector = (from, to) => [
+      (result[to].loc[0] - result[from].loc[0]) * Math.cos(meanLat),
+      result[to].loc[1] - result[from].loc[1],
+    ];
+    const u = vector(a, b),
+      v = vector(b, c);
+    const length = Math.hypot(...u) * Math.hypot(...v);
+    if (!length) return 0;
+    const cosine = (u[0] * v[0] + u[1] * v[1]) / length;
+    return (Math.acos(Math.max(-1, Math.min(1, cosine))) * 180) / Math.PI;
+  };
+  for (;;) {
+    let spike = -1,
+      sharpest = SPIKE_TURN_DEGREES;
+    for (let k = 1; k < kept.length - 1; k++) {
+      if (!removable[kept[k]]) continue;
+      const value = turn(kept[k - 1], kept[k], kept[k + 1]);
+      if (value > sharpest) {
+        spike = k;
+        sharpest = value;
+      }
+    }
+    if (spike === -1) break;
+    kept.splice(spike, 1);
+  }
+  return kept.map((index) => result[index]);
 }
 
 // Fingerprint of everything else that uses a node: the sorted IDs of its

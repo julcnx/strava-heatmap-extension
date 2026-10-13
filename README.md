@@ -60,10 +60,20 @@ With a Strava Heatmap overlay switched on and the extension signed in, an existi
 
 1. Log into Strava with the extension and enable a Strava heatmap overlay.
 2. Draw a rough **open line** close to the desired trail, or select an existing line.
-3. Press **Shift + S**, or right-click the selected line and choose **Slide**.
+3. Press **Shift + S** (also right after drawing), or right-click the selected line and choose **Slide**.
    To slide only part of a way, select two or more of its vertices instead.
 4. If several Strava overlays are enabled, choose the activity to follow.
 5. Review the result before saving. Use iD's normal **Undo** to restore the original line.
+
+What Slide changes:
+
+- Untagged junctions and the ends of the line move onto the trail too (at most 18 m), and connected ways follow them. Tagged nodes (fords, gates, crossings…), relation members, and junctions with bridges, tunnels or short ways stay in place.
+- Where the line meets another road or path, it does not run along it: the junction moves to where the line leaves it.
+- Sections with no usable heatmap trail are left as drawn, and the rest is slid. A message tells you how many.
+- Near-duplicate vertices, tiny kinks and spikes are removed. Only untagged nodes not used by anything else are ever deleted.
+- Bridges and tunnels themselves are not slid.
+
+The extension's shortcuts are also listed in iD's keyboard shortcuts panel (**?**).
 
 ### GPX.studio editor
 

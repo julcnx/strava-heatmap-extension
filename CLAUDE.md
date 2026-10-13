@@ -13,7 +13,7 @@ Work directly on `vX.Y.Z`: don't create extra branches for it.
 
 ## When releasing
 
-1. Update the `CHANGELOG.md` date to the release day.
+1. Run `npm test`, and update the `CHANGELOG.md` date to the release day.
 2. Build the store zips with `npm run build` (`dist/X.Y.Z-chrome.zip`, `dist/X.Y.Z-firefox.zip`).
 3. Fast-forward `master` to `vX.Y.Z`, then push `master` and `vX.Y.Z`.
 4. Never delete version branches: the logged-out fallback image URL points at

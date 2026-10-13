@@ -4,6 +4,7 @@ import { injectHeatmapColorFilters } from './colors.js';
 import { restoreiDContainer, setupiDCoreContextListener } from './id.js';
 import { applyImagery } from './imagery.js';
 import { setupOverlaysListeners } from './overlays.js';
+import { setupShortcutsHelp } from './shortcuts.js';
 import { setupSlide } from './slide/index.js';
 
 async function main() {
@@ -29,6 +30,8 @@ async function main() {
     await applyImagery(context, layerPresets, authenticated, version);
 
     await setupOverlaysListeners(context);
+
+    setupShortcutsHelp(context);
 
     try {
       await setupSlide(context, () => authenticated);

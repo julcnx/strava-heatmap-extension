@@ -48,6 +48,8 @@ const EARTH_CIRCUMFERENCE = 40075016.68557849;
 //   contrastRadiusMeters   – neighbourhood size of the contrast normalisation
 //   minTriangleSquareMeters – inserted vertices forming a smaller triangle with
 //                             their neighbours are dropped as noise
+//   approachFactor         – a fixed vertex off the trail center joins it over
+//                             this many times its offset, instead of a hook
 //   avoidMeters            – a section is penalised for running this close to
 //                             the path traced by earlier sections (same value
 //                             as the duplicate-vertex merge in action.js)
@@ -60,6 +62,7 @@ export const SLIDE_DEFAULTS = Object.freeze({
   contrastRadiusMeters: 12,
   minTriangleSquareMeters: 40,
   avoidMeters: 4,
+  approachFactor: 3,
 });
 
 // Project [longitude, latitude] into Web-Mercator pixel coordinates at the
@@ -914,6 +917,31 @@ export async function slideLine(locations, raster, options = {}) {
   const traced = paths.map(
     (path, i) => Boolean(path) && !unsnapped.has(i - 1) && !unsnapped.has(i)
   );
+  // A fixed vertex (endpoint, junction, tagged node) may sit off the trail
+  // center; tracing from it jumps sideways to the ridge and leaves a hook.
+  // Join the ridge gradually instead, over approachFactor × its offset.
+  const approachLength = (v) => {
+    if (!fixed.has(v)) return 0;
+    const center = snap(tracking, originals[v], snapRadius);
+    if (!center) return 0;
+    const offset = Math.hypot(center[0] - originals[v][0], center[1] - originals[v][1]);
+    return offset > 1 ? SLIDE_DEFAULTS.approachFactor * offset : 0;
+  };
+  // Drop the interior points within `length` pixels along the path from its
+  // first point, so the line runs straight from that point to the next one.
+  const approach = (points, length) => {
+    if (!length) return points;
+    let along = 0,
+      k = 1;
+    for (; k < points.length - 1; k++) {
+      along += Math.hypot(
+        points[k][0] - points[k - 1][0],
+        points[k][1] - points[k - 1][1]
+      );
+      if (along >= length) break;
+    }
+    return [points[0], ...points.slice(k)];
+  };
   const result = [{ loc: locations[0].slice(), nodeIndex: 0 }];
   result.skipped = traced.filter((ok, i) => i && !ok).length;
   if (result.skipped === originals.length - 1) {
@@ -922,9 +950,13 @@ export async function slideLine(locations, raster, options = {}) {
     );
   }
   for (let i = 1; i < originals.length; i++) {
-    const reduced = traced[i]
+    let reduced = traced[i]
       ? removeSmallTurns(simplify(paths[i], tolerance, tracking), minArea)
       : [];
+    if (reduced.length > 2) {
+      reduced = approach(reduced, approachLength(i - 1));
+      reduced = approach(reduced.reverse(), approachLength(i)).reverse();
+    }
     // The path's first and last pixel are the anchors themselves, which the
     // next iteration emits as section endpoints — skip them here.
     for (let j = 1; j < reduced.length - 1; j++) {

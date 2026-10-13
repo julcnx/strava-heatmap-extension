@@ -4,6 +4,7 @@ import { injectHeatmapColorFilters } from './colors.js';
 import { restoreiDContainer, setupiDCoreContextListener } from './id.js';
 import { applyImagery } from './imagery.js';
 import { setupOverlaysListeners } from './overlays.js';
+import { setupHeatmapNotice } from './notice.js';
 import { setupShortcutsHelp } from './shortcuts.js';
 import { setupSlide } from './slide/index.js';
 
@@ -32,9 +33,10 @@ async function main() {
     await setupOverlaysListeners(context);
 
     setupShortcutsHelp(context);
+    const ensureNotice = setupHeatmapNotice(context, () => authenticated);
 
     try {
-      await setupSlide(context, () => authenticated);
+      await setupSlide(context, () => authenticated, ensureNotice);
     } catch (error) {
       // A Slide initialization problem should never disable the heatmap.
       console.warn('[StravaHeatmapExt] Could not initialize Slide:', error);

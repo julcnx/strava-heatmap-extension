@@ -3,7 +3,7 @@
 // is appended to its Editing tab with the same markup instead, whenever the
 // panel is opened.
 const SHORTCUTS = [
-  ['⇧', 'Q', 'Toggle the Strava heatmap overlays'],
+  ['⇧', 'Q', 'Toggle all overlays, including the Strava heatmap'],
   ['⇧', 'W', 'Toggle the OpenStreetMap data'],
   ['⇧', 'S', 'Slide the selected line along the Strava heatmap'],
 ];

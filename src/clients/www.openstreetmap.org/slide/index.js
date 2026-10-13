@@ -151,7 +151,11 @@ function isEmptyPresetSearch(target) {
   );
 }
 
-export async function setupSlide(context, isAuthenticated) {
+export async function setupSlide(
+  context,
+  isAuthenticated,
+  ensureNotice = async () => true
+) {
   await installIcon();
   let busy = false;
   const shortcut = window.iD.uiCmd('⇧S');
@@ -163,6 +167,10 @@ export async function setupSlide(context, isAuthenticated) {
   // to the selection the user actually acted on.
   function createOperation(ids) {
     const operation = async () => {
+      if (operation.disabled()) return;
+      // The heatmap notice must have been acknowledged once (see notice.js);
+      // the selection may have changed while it was open.
+      if (!(await ensureNotice())) return;
       if (operation.disabled()) return;
       // Snapshot the graph: everything is computed against this state, and
       // action.js refuses to apply the edit if it no longer matches.

@@ -50,7 +50,7 @@ To enable the Strava Heatmap in the iD editor:
 3. Select a Strava Heatmap overlay from the list.
 4. If you see the message "Click the Strava Heatmap extension icon to log into Strava…", click the red extension icon to authenticate.
 5. After logging in, use the green extension icon to configure heatmap layers — choose activity type, color, and manage layer order or deletion.
-6. In the editor, press Shift + Q to toggle the heatmap, and Shift + W to toggle data visibility.
+6. In the editor, press Shift + Q to toggle all overlays (including the heatmap), and Shift + W to toggle data visibility.
 
 ### Strava Slide (iD)
 

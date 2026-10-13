@@ -77,12 +77,14 @@ export function protectedIndices(graph, selection) {
   );
 }
 
-// Vertices closer together than this are redundant duplicates (1 m is well
-// below one zoom-15 pixel of ~2.4 m, so this only ever removes true
-// duplicates). Slide-created nodes are removed first; existing OSM nodes are
-// removed only when untagged, unused by any other way and not relation
-// members — see cleanSlideResult() for the full rules.
-const CLOSE_METERS = 1;
+// Vertices closer together than this are redundant: under two zoom-15 pixels
+// (~2.4 m each), so the heatmap cannot tell them apart. Slide-created nodes are
+// removed first; existing OSM nodes are removed only when untagged, unused by
+// any other way and not relation members — see cleanSlideResult() for the
+// full rules. Only vertices within ALONG_LINE_METERS along the line are
+// compared, so the two legs of a tight hairpin are never merged.
+const CLOSE_METERS = 4;
+const ALONG_LINE_METERS = 2 * CLOSE_METERS;
 
 // Approximate ground distance in metres, using an equirectangular projection
 // at the pair's mean latitude. Accurate to far better than 1 % over the tiny
@@ -132,7 +134,9 @@ export function cleanSlideResult(before, selection, result) {
   const dropped = new Set();
   for (let i = 0; i < result.length; i++) {
     if (dropped.has(i)) continue;
-    for (let j = i + 1; j < result.length; j++) {
+    for (let j = i + 1, along = 0; j < result.length; j++) {
+      along += distanceMeters(result[j - 1].loc, result[j].loc);
+      if (along > ALONG_LINE_METERS) break;
       if (dropped.has(j)) continue;
       if (distanceMeters(result[i].loc, result[j].loc) >= CLOSE_METERS) continue;
       const a = rank(i),

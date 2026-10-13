@@ -14,7 +14,7 @@
  * context.perform(), context.keybinding() and so on. We only use that public
  * surface, so nothing here depends on iD's internals.
  */
-import { createHeatmapRaster, slideLine } from './algorithm.js';
+import { createHeatmapRaster, slideLineTwice } from './algorithm.js';
 import {
   cleanSlideResult,
   createSlideAction,
@@ -141,6 +141,14 @@ function showProgress(context, controller, sources) {
 // Called once by the extension after iD has booted. `isAuthenticated` reports
 // the Strava login state of the extension (the tile requests would come back
 // 401 without it).
+function isEmptyPresetSearch(target) {
+  return (
+    target instanceof HTMLInputElement &&
+    target.matches('.preset-search-input') &&
+    !target.value
+  );
+}
+
 export async function setupSlide(context, isAuthenticated) {
   await installIcon();
   let busy = false;
@@ -179,7 +187,7 @@ export async function setupSlide(context, isAuthenticated) {
         //    indices (tagged nodes, junctions) are passed along so they stay
         //    put; endpoints are always fixed inside slideLine() itself.
         const raster = createHeatmapRaster(loaded.tiles, loaded.zoom, loaded.bounds);
-        const result = await slideLine(locations, raster, {
+        const result = await slideLineTwice(locations, raster, {
           fixedIndices: protectedIndices(graph, selection),
           signal: controller.signal,
           onProgress: (value) =>
@@ -324,6 +332,7 @@ export async function setupSlide(context, isAuthenticated) {
     const target = event.target;
     if (
       target instanceof Element &&
+      !isEmptyPresetSearch(target) &&
       (target.isContentEditable ||
         target.closest('input, textarea, select, [role="textbox"]'))
     )
@@ -364,13 +373,29 @@ export async function setupSlide(context, isAuthenticated) {
       const slide = createOperation(mode.selectedIDs().slice());
       if (!slide.available() || operations.some((op) => op.id === 'slide'))
         return operations;
-      const index = operations.findIndex((op) => op.id === 'delete');
+      // Next to Straighten, its closest relative; iD keeps Copy/Downgrade/Delete
+      // grouped last, so fall back to just before Copy.
+      const straighten = operations.findIndex((op) => op.id === 'straighten');
+      const copy = operations.findIndex((op) => op.id === 'copy');
+      const index =
+        straighten >= 0 ? straighten + 1 : copy >= 0 ? copy : operations.length;
       const result = operations.slice();
-      result.splice(index < 0 ? result.length : index, 0, slide);
+      result.splice(index, 0, slide);
       return result;
     };
     wrapped.add(mode);
   }
+  // After drawing a line, iD focuses the empty preset search, and its
+  // keybinding ignores keys typed in inputs. Like iD's own undo hack there,
+  // treat ⇧S as Slide until something is typed into that search.
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (isEmptyPresetSearch(event.target) && event.key.toLowerCase() === 's')
+        keypress(event);
+    },
+    true
+  );
   context.on('enter.strava-slide', attach);
   attach();
 }

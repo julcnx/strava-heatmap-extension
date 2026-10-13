@@ -60,8 +60,7 @@ With a Strava Heatmap overlay switched on and the extension signed in, an existi
 
 1. Log into Strava with the extension and enable a Strava heatmap overlay.
 2. Draw a rough **open line** close to the desired trail, or select an existing line.
-3. Press **Shift + S**, or right-click the selected line and choose **Slide**
-   (the blue-arrow/trail icon).
+3. Press **Shift + S**, or right-click the selected line and choose **Slide**.
    To slide only part of a way, select two or more of its vertices instead.
 4. If several Strava overlays are enabled, choose the activity to follow.
 5. Review the result before saving. Use iD's normal **Undo** to restore the original line.

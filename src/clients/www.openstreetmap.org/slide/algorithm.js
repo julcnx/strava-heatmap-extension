@@ -48,10 +48,6 @@ const EARTH_CIRCUMFERENCE = 40075016.68557849;
 //   contrastRadiusMeters   – neighbourhood size of the contrast normalisation
 //   minTriangleSquareMeters – inserted vertices forming a smaller triangle with
 //                             their neighbours are dropped as noise
-//   straightenMeters       – original vertices this close to their neighbours'
-//                             line are moved onto it
-//   maxRefineMeters        – how far an original vertex may move onto the path
-//                             traced around it
 export const SLIDE_DEFAULTS = Object.freeze({
   searchRadiusMeters: 24,
   maxSearchRadiusMeters: 80,
@@ -60,8 +56,6 @@ export const SLIDE_DEFAULTS = Object.freeze({
   simplifyMeters: 2,
   contrastRadiusMeters: 12,
   minTriangleSquareMeters: 40,
-  straightenMeters: 3,
-  maxRefineMeters: 8,
 });
 
 // Project [longitude, latitude] into Web-Mercator pixel coordinates at the
@@ -490,26 +484,25 @@ function snap(raster, point, radius) {
 // Afterwards the path is validated for continuity: a long dark interior
 // stretch means the corridor crossed a gap instead of following a trail. Such
 // paths raise SLIDE_NO_SIGNAL so the caller can retry with a wider radius.
-async function trace(raster, start, end, corridor, radius, options) {
+async function trace(raster, start, end, originalStart, originalEnd, radius, options) {
   if (!isCovered(raster, start) || !isCovered(raster, end)) {
     throw new Error('Heatmap coverage is incomplete at an endpoint.');
   }
-  const extent = [...corridor, start, end];
   const minX = Math.max(
     raster.x,
-    Math.floor(Math.min(...extent.map((p) => p[0])) - radius)
+    Math.floor(Math.min(originalStart[0], originalEnd[0], start[0], end[0]) - radius)
   );
   const minY = Math.max(
     raster.y,
-    Math.floor(Math.min(...extent.map((p) => p[1])) - radius)
+    Math.floor(Math.min(originalStart[1], originalEnd[1], start[1], end[1]) - radius)
   );
   const maxX = Math.min(
     raster.x + raster.width - 1,
-    Math.ceil(Math.max(...extent.map((p) => p[0])) + radius)
+    Math.ceil(Math.max(originalStart[0], originalEnd[0], start[0], end[0]) + radius)
   );
   const maxY = Math.min(
     raster.y + raster.height - 1,
-    Math.ceil(Math.max(...extent.map((p) => p[1])) + radius)
+    Math.ceil(Math.max(originalStart[1], originalEnd[1], start[1], end[1]) + radius)
   );
   const width = maxX - minX + 1,
     height = maxY - minY + 1;
@@ -521,12 +514,7 @@ async function trace(raster, start, end, corridor, radius, options) {
     for (let x = minX; x <= maxX; x++) {
       const i = (y - minY) * width + x - minX;
       const j = (y - raster.y) * raster.width + x - raster.x;
-      let distance = Infinity;
-      for (let k = 1; k < corridor.length; k++)
-        distance = Math.min(
-          distance,
-          distanceToSegment([x, y], corridor[k - 1], corridor[k])
-        );
+      const distance = distanceToSegment([x, y], originalStart, originalEnd);
       if (!raster.coverage[j] || distance > radius) continue;
       cellCosts[i] =
         0.06 + 8 * (1 - raster.density[j]) ** 2 + 0.04 * (distance / radius) ** 2;
@@ -838,12 +826,25 @@ export async function slideLine(locations, raster, options = {}) {
   //    is simplified on its own and contributes: the interior simplified
   //    vertices (slide-created, nodeIndex null) followed by the segment's end
   //    vertex (nodeIndex i).
-  // Start with a narrow corridor (precise on hairpins) and widen only when
-  // the trail cannot be reached or is not continuous within it.
-  const traceWidening = async (start, end, corridor) => {
+  const result = [{ loc: locations[0].slice(), nodeIndex: 0 }];
+  for (let i = 1; i < originals.length; i++) {
+    await options.yield();
+    checkAbort(options.signal);
+    let path;
+    // Start with a narrow corridor (precise on hairpins) and widen only when
+    // the trail cannot be reached or is not continuous within it.
     for (const r of searchRadii(radius, maxSearchMeters / scale)) {
       try {
-        return await trace(tracking, start, end, corridor, r, options);
+        path = await trace(
+          tracking,
+          anchors[i - 1],
+          anchors[i],
+          originals[i - 1],
+          originals[i],
+          r,
+          options
+        );
+        break;
       } catch (error) {
         if (error.code !== 'SLIDE_NO_SIGNAL' || r === maxSearchMeters / scale)
           throw error;
@@ -851,45 +852,6 @@ export async function slideLine(locations, raster, options = {}) {
         checkAbort(options.signal);
       }
     }
-  };
-  // A vertex snapped slightly off the ridge forces a detour (a spike). Trace
-  // from its neighbours without it and move it onto that path, unless that
-  // would move it far (a hairpin shortcut, not a detour).
-  const maxShift = SLIDE_DEFAULTS.maxRefineMeters / scale;
-  for (let i = 1; i < originals.length - 1; i++) {
-    if (fixed.has(i)) continue;
-    await options.yield();
-    checkAbort(options.signal);
-    let bypass;
-    try {
-      bypass = await traceWidening(
-        anchors[i - 1],
-        anchors[i + 1],
-        originals.slice(i - 1, i + 2)
-      );
-    } catch (error) {
-      if (error.name === 'AbortError') throw error;
-      continue;
-    }
-    let best,
-      bestDistance = maxShift;
-    for (const p of bypass) {
-      const d = Math.hypot(p[0] - anchors[i][0], p[1] - anchors[i][1]);
-      if (d < bestDistance) {
-        best = p;
-        bestDistance = d;
-      }
-    }
-    if (best) anchors[i] = best;
-  }
-  const result = [{ loc: locations[0].slice(), nodeIndex: 0 }];
-  for (let i = 1; i < originals.length; i++) {
-    await options.yield();
-    checkAbort(options.signal);
-    const path = await traceWidening(anchors[i - 1], anchors[i], [
-      originals[i - 1],
-      originals[i],
-    ]);
     const reduced = removeSmallTurns(simplify(path, tolerance, tracking), minArea);
     // The path's first and last pixel are the anchors themselves, which the
     // next loop iteration emits as segment endpoints — skip them here.
@@ -905,7 +867,7 @@ export async function slideLine(locations, raster, options = {}) {
     options.onProgress?.(i / (originals.length - 1));
   }
   checkAbort(options.signal);
-  return straighten(result, fixed, raster.zoom, SLIDE_DEFAULTS.straightenMeters / scale);
+  return result;
 }
 
 // Slide twice: a second pass over the first result (now densely on the trail)
@@ -931,28 +893,4 @@ export async function slideLineTwice(locations, raster, options = {}) {
     loc: record.loc,
     nodeIndex: record.nodeIndex === null ? null : first[record.nodeIndex].nodeIndex,
   }));
-}
-
-// Original vertices are snapped to whole pixels and the path must pass through
-// them, which leaves ~1 pixel jogs. Move each unprotected original vertex onto
-// the line between its neighbours when it deviates less than `limit` pixels.
-function straighten(result, fixed, zoom, limit) {
-  const records = result.map((record) => ({ ...record, loc: record.loc.slice() }));
-  for (let i = 1; i < records.length - 1; i++) {
-    const record = records[i];
-    if (record.nodeIndex === null || fixed.has(record.nodeIndex)) continue;
-    const p = project(record.loc, zoom),
-      a = project(records[i - 1].loc, zoom),
-      b = project(records[i + 1].loc, zoom);
-    const dx = b[0] - a[0],
-      dy = b[1] - a[1],
-      length = dx * dx + dy * dy;
-    if (!length || distanceToSegment(p, a, b) >= limit) continue;
-    const t = Math.max(
-      0,
-      Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length)
-    );
-    record.loc = unproject([a[0] + t * dx, a[1] + t * dy], zoom);
-  }
-  return records;
 }

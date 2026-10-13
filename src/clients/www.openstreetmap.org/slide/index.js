@@ -262,6 +262,14 @@ export async function setupSlide(context, isAuthenticated) {
                 `${result.skipped} ${sections} without a usable heatmap trail left as drawn.`
               )
             )();
+        } else {
+          // Brief confirmation, like iD's own operations (behavior/operation.js).
+          context
+            .ui()
+            .flash.duration(2000)
+            .iconName('#iD-operation-slide')
+            .iconClass('operation')
+            .label(label('Slid along Strava heatmap.'))();
         }
       } catch (error) {
         if (error.name !== 'AbortError') {

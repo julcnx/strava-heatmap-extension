@@ -52,7 +52,19 @@ To enable the Strava Heatmap in the iD editor:
 5. After logging in, use the green extension icon to configure heatmap layers — choose activity type, color, and manage layer order or deletion.
 6. In the editor, press Shift + Q to toggle the heatmap, and Shift + W to toggle data visibility.
 
----
+### Strava Slide (iD)
+
+https://github.com/user-attachments/assets/8e15a0e4-30a3-4ea1-860b-60750700e54a
+
+With a Strava Heatmap overlay switched on and the extension signed in, an existing line can be snapped to the closest trace of that heatmap. Inspired by [Paul Mach's Slide](https://github.com/paulmach/slide/) and [Strava's iD integration](https://github.com/strava/iD).
+
+1. Log into Strava with the extension and enable a Strava heatmap overlay.
+2. Draw a rough **open line** close to the desired trail, or select an existing line.
+3. Press **Shift + S**, or right-click the selected line and choose **Slide**
+   (the blue-arrow/trail icon).
+   To slide only part of a way, select two or more of its vertices instead.
+4. If several Strava overlays are enabled, choose the activity to follow.
+5. Review the result before saving. Use iD's normal **Undo** to restore the original line.
 
 ### GPX.studio editor
 

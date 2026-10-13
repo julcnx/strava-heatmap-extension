@@ -1,0 +1,840 @@
+/**
+ * Strava Slide – the heatmap-snapping engine.
+ *
+ * Slide takes a roughly digitised OSM line and refits it onto the trail that
+ * people actually recorded on the Strava heatmap. This file is the pure
+ * geometry/raster core: it never touches the DOM or the OSM graph, so it can
+ * be reused by any editor. The surrounding modules are:
+ *
+ *   index.js   – wires Slide into the iD editor (menu entry, Shift+S, dialog)
+ *   tiles.js   – downloads the heatmap PNG tiles around the line
+ *   png.js     – decodes those PNGs into ordered heat "density" values
+ *   action.js  – turns the fitted geometry into an undoable iD edit
+ *
+ * How a line is fitted (see slideLine() at the bottom for the orchestration):
+ *   1. Downloaded tiles are merged into one raster – createHeatmapRaster().
+ *   2. A locally contrast-normalised copy ("tracking surface") is built so a
+ *      faint but coherent trail is as visible as a bright road.
+ *   3. Every original vertex is snapped onto the nearest trail point
+ *      ("anchor"); fixed vertices (endpoints, junctions) keep their position.
+ *   4. Between consecutive anchors, a corridor-constrained shortest path over
+ *      the raster grid follows the density ridge – trace().
+ *   5. That pixel path is simplified to a few vertices – simplify().
+ *
+ * Terminology used throughout:
+ *   loc     – [longitude, latitude] pair, as used by OSM and iD
+ *   point   – fractional [x, y] position in projected pixel space
+ *   density – heat strength in 0..1 (1 = hottest Strava level)
+ *   raster  – a rectangle of density + coverage samples in pixel space
+ *   anchor  – the trail point that one original vertex snapped to
+ *   segment – the piece of the line between two consecutive original vertices
+ *
+ * Why a corridor-constrained shortest path instead of an active contour
+ * ("snake")? A contour is pulled by an average of nearby image forces, which
+ * straightens it out of narrow hairpins. The grid search here must walk the
+ * ridge continuously and cannot skip ahead, so tight switchbacks survive.
+ */
+const TILE_SIZE = 512;
+const EARTH_CIRCUMFERENCE = 40075016.68557849;
+
+// Tuning knobs, all in metres on the ground (converted to pixels where used).
+// They are also shared with the tile loader (tiles.js): widening a search is
+// only useful when the surrounding imagery has actually been downloaded.
+//   searchRadiusMeters     – corridor half-width around the original segment
+//   maxSearchRadiusMeters  – the same, when the first attempts find no trail
+//   snapRadiusMeters       – how far an original vertex may move to a trail
+//   maxSnapRadiusMeters    – the same, with adaptive widening attempts
+//   simplifyMeters         – Douglas–Peucker tolerance for the final vertices
+//   contrastRadiusMeters   – neighbourhood size of the contrast normalisation
+export const SLIDE_DEFAULTS = Object.freeze({
+  searchRadiusMeters: 24,
+  maxSearchRadiusMeters: 80,
+  snapRadiusMeters: 18,
+  maxSnapRadiusMeters: 60,
+  simplifyMeters: 2,
+  contrastRadiusMeters: 12,
+});
+
+// Project [longitude, latitude] into Web-Mercator pixel coordinates at the
+// given zoom. This is the shared "unit system" of the module: the raster, the
+// path search and the simplification all work in these pixels. Zoom 15 (~2.4 m
+// per pixel near the equator) matches the zoom of the downloaded tiles.
+export function project(loc, zoom = 15) {
+  const size = TILE_SIZE * 2 ** zoom;
+  const lat = (Math.max(-85.05112878, Math.min(85.05112878, loc[1])) * Math.PI) / 180;
+  return [
+    ((loc[0] + 180) / 360) * size,
+    ((1 - Math.asinh(Math.tan(lat)) / Math.PI) / 2) * size,
+  ];
+}
+
+// The exact inverse of project(): pixel coordinates back to [longitude,
+// latitude]. The latitude is un-projected with atan(sinh(...)), the inverse of
+// the Mercator y formula used above.
+export function unproject(point, zoom = 15) {
+  const size = TILE_SIZE * 2 ** zoom;
+  return [
+    (point[0] / size) * 360 - 180,
+    (Math.atan(Math.sinh(Math.PI * (1 - (2 * point[1]) / size))) * 180) / Math.PI,
+  ];
+}
+
+// Ground width of one pixel at a latitude, in metres. Needed to translate the
+// metre-based settings ("18 m snap radius") into pixels. It shrinks towards
+// the poles because Mercator stretches them.
+export function metersPerPixel(latitude, zoom = 15) {
+  return (
+    (EARTH_CIRCUMFERENCE * Math.cos((latitude * Math.PI) / 180)) / (TILE_SIZE * 2 ** zoom)
+  );
+}
+
+// Projected bounding box of a line, expanded by `padding` pixels on every
+// side. Decides which tiles to download and which area the raster covers.
+export function lineBounds(locations, zoom, padding) {
+  const points = locations.map((loc) => project(loc, zoom));
+  return {
+    minX: Math.floor(Math.min(...points.map((p) => p[0])) - padding),
+    minY: Math.floor(Math.min(...points.map((p) => p[1])) - padding),
+    maxX: Math.ceil(Math.max(...points.map((p) => p[0])) + padding),
+    maxY: Math.ceil(Math.max(...points.map((p) => p[1])) + padding),
+  };
+}
+
+// Smooth the raster slightly (small separable Gaussian: horizontally, then
+// vertically). Raster stair-steps and single-pixel noise would otherwise
+// dominate the per-cell cost, while tight turns and neighbouring paths must
+// stay distinguishable – hence the narrow 5-tap kernel.
+function blur(data, width, height) {
+  const kernel = [0.0545, 0.2442, 0.4026, 0.2442, 0.0545];
+  const temp = new Float32Array(data.length);
+  const output = new Float32Array(data.length);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      for (let k = -2; k <= 2; k++) {
+        temp[y * width + x] +=
+          data[y * width + Math.max(0, Math.min(width - 1, x + k))] * kernel[k + 2];
+      }
+    }
+  }
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      for (let k = -2; k <= 2; k++) {
+        output[y * width + x] +=
+          temp[Math.max(0, Math.min(height - 1, y + k)) * width + x] * kernel[k + 2];
+      }
+    }
+  }
+  return output;
+}
+
+// Merge decoded tiles into a single raster covering `bounds`.
+//
+// Each tile carries its own zoom `z` and tile indices `x`/`y`; tiles may
+// therefore differ in resolution (when zoom-15 imagery is missing, tiles.js
+// falls back to a parent tile that covers four child tiles at half the
+// resolution). `scale` below maps such a parent tile into the zoom-15 pixel
+// grid. Tiles are processed finest-first and the first tile to cover a pixel
+// wins, so the highest available resolution is always sampled.
+//
+// Two pixel formats are accepted:
+//   * tile.density – decoded heat levels 0..1 (from png.js; the normal case)
+//   * tile.data    – legacy RGBA pixels, only for palettes whose brightness is
+//                    monotonic in heat (e.g. "hot"). Live tiles never use it,
+//                    because Strava's display colours are not an ordered scale.
+//
+// `coverage` records whether a pixel is backed by real imagery at all.
+// Uncovered pixels stay at density 0 and are never invented, so the tracer can
+// never invent heat where no tile was downloaded.
+//
+// Returns { width, height, x, y, zoom, density, coverage }, where x/y are the
+// projected coordinates of the raster's top-left corner: a global point `p`
+// maps to raster-local coordinates (p[0] - x, p[1] - y).
+export function createHeatmapRaster(tiles, zoom = 15, bounds) {
+  if (!tiles.length) throw new Error('No heatmap tiles are available.');
+  const extents = tiles.map((tile) => {
+    const scale = TILE_SIZE * 2 ** (zoom - tile.z);
+    return { tile, scale, x: tile.x * scale, y: tile.y * scale };
+  });
+  bounds ||= {
+    minX: Math.floor(Math.min(...extents.map((e) => e.x))),
+    minY: Math.floor(Math.min(...extents.map((e) => e.y))),
+    maxX: Math.ceil(Math.max(...extents.map((e) => e.x + e.scale))),
+    maxY: Math.ceil(Math.max(...extents.map((e) => e.y + e.scale))),
+  };
+  const width = bounds.maxX - bounds.minX + 1;
+  const height = bounds.maxY - bounds.minY + 1;
+  if (width < 2 || height < 2 || width * height > 4000000) {
+    throw new Error('Slide area is too large. Select a shorter section of the line.');
+  }
+  const density = new Float32Array(width * height);
+  const coverage = new Uint8Array(width * height);
+  extents.sort((a, b) => b.tile.width / b.scale - a.tile.width / a.scale);
+  for (const { tile, scale, x: tx, y: ty } of extents) {
+    if (
+      tile.density
+        ? tile.density.length !== tile.width * tile.height
+        : !tile.data || tile.data.length !== tile.width * tile.height * 4
+    ) {
+      throw new Error('Invalid heatmap tile pixels.');
+    }
+    const value = (x, y) => {
+      if (tile.density) return tile.density[y * tile.width + x];
+      const i = (y * tile.width + x) * 4;
+      // Legacy RGBA input: luminance × alpha. Only useful for known monotonic
+      // palettes such as hot; live tiles use decoded palette-index density.
+      return (
+        (((0.2126 * tile.data[i] +
+          0.7152 * tile.data[i + 1] +
+          0.0722 * tile.data[i + 2]) /
+          255) *
+          tile.data[i + 3]) /
+        255
+      );
+    };
+    for (
+      let y = Math.max(bounds.minY, Math.ceil(ty));
+      y < Math.min(bounds.maxY + 1, ty + scale);
+      y++
+    ) {
+      for (
+        let x = Math.max(bounds.minX, Math.ceil(tx));
+        x < Math.min(bounds.maxX + 1, tx + scale);
+        x++
+      ) {
+        const index = (y - bounds.minY) * width + x - bounds.minX;
+        if (coverage[index]) continue;
+        // Image samples live at pixel centers, not at the tile's upper-left
+        // pixel edges. This also avoids a half-pixel shift in parent fallback.
+        const px = Math.max(
+          0,
+          Math.min(tile.width - 1, ((x - tx) / scale) * tile.width - 0.5)
+        );
+        const py = Math.max(
+          0,
+          Math.min(tile.height - 1, ((y - ty) / scale) * tile.height - 0.5)
+        );
+        const x0 = Math.floor(px),
+          y0 = Math.floor(py);
+        const x1 = Math.min(x0 + 1, tile.width - 1),
+          y1 = Math.min(y0 + 1, tile.height - 1);
+        const dx = px - x0,
+          dy = py - y0;
+        density[index] =
+          (value(x0, y0) * (1 - dx) + value(x1, y0) * dx) * (1 - dy) +
+          (value(x0, y1) * (1 - dx) + value(x1, y1) * dx) * dy;
+        coverage[index] = 1;
+      }
+    }
+  }
+  // Shift the range so the darkest covered pixel becomes exactly 0 and the
+  // scale stays 0..1. This removes the flat image background without
+  // amplifying almost-empty tiles (the 0.1 denominator guard).
+  let floor = 1;
+  for (let i = 0; i < density.length; i++) {
+    if (coverage[i]) floor = Math.min(floor, density[i]);
+  }
+  for (let i = 0; i < density.length; i++) {
+    density[i] = Math.max(0, (density[i] - floor) / Math.max(0.1, 1 - floor));
+  }
+  return {
+    width,
+    height,
+    x: bounds.minX,
+    y: bounds.minY,
+    zoom,
+    density: blur(density, width, height),
+    coverage,
+  };
+}
+
+// Bilinear interpolation of the density at a fractional pixel point; points
+// outside the raster read 0. Interpolation matters because the path search
+// compares costs of positions that can fall between pixel centers, and the
+// simplification guard samples along chords that rarely hit pixel centers.
+export function sampleDensity(raster, point) {
+  const x = point[0] - raster.x,
+    y = point[1] - raster.y;
+  if (x < 0 || y < 0 || x >= raster.width - 1 || y >= raster.height - 1) return 0;
+  const x0 = Math.floor(x),
+    y0 = Math.floor(y),
+    dx = x - x0,
+    dy = y - y0;
+  const i = y0 * raster.width + x0;
+  return (
+    (raster.density[i] * (1 - dx) + raster.density[i + 1] * dx) * (1 - dy) +
+    (raster.density[i + raster.width] * (1 - dx) +
+      raster.density[i + raster.width + 1] * dx) *
+      dy
+  );
+}
+
+// Shortest distance from point `p` to the segment a–b (0 for degenerate
+// segments). Used to constrain the search corridor to the neighbourhood of the
+// original line, which is what keeps Slide from wandering onto a parallel road.
+function distanceToSegment(p, a, b) {
+  const dx = b[0] - a[0],
+    dy = b[1] - a[1];
+  const length = dx * dx + dy * dy;
+  const t = length
+    ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length))
+    : 0;
+  return Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t);
+}
+
+// Minimal binary min-heap keyed by `cost` (entries are { index, cost } into a
+// flattened 2-D array). Dijkstra's algorithm always needs the cheapest
+// unexplored cell next, which this provides in O(log n).
+class MinHeap {
+  items = [];
+  push(item) {
+    let i = this.items.length;
+    this.items.push(item);
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (this.items[parent].cost <= item.cost) break;
+      this.items[i] = this.items[parent];
+      i = parent;
+    }
+    this.items[i] = item;
+  }
+  pop() {
+    const first = this.items[0],
+      last = this.items.pop();
+    if (this.items.length) {
+      let i = 0;
+      while (i * 2 + 1 < this.items.length) {
+        let child = i * 2 + 1;
+        if (
+          child + 1 < this.items.length &&
+          this.items[child + 1].cost < this.items[child].cost
+        )
+          child++;
+        if (this.items[child].cost >= last.cost) break;
+        this.items[i] = this.items[child];
+        i = child;
+      }
+      this.items[i] = last;
+    }
+    return first;
+  }
+}
+
+// Cooperative cancellation. Slide can run for seconds on long lines, so the
+// loops below call this regularly (together with options.yield(), which lets
+// the browser repaint and the progress bar move) so the Cancel button stays
+// responsive. A cancelled run throws a DOMException named 'AbortError', which
+// index.js treats as "user cancelled", not as a failure.
+function checkAbort(signal) {
+  if (signal?.aborted) throw new DOMException('Slide cancelled.', 'AbortError');
+}
+
+// "There is no heatmap trail here" is an expected outcome (faint heat, an
+// ambiguous fork, incomplete coverage), not a bug. Tagging the error with
+// SLIDE_NO_SIGNAL lets slideLine retry the step with a wider search radius
+// before giving up, and lets index.js show an actionable message.
+function noSignal(message) {
+  const error = new Error(message);
+  error.code = 'SLIDE_NO_SIGNAL';
+  return error;
+}
+
+// Whether a raster pixel is actually backed by downloaded imagery. Used to
+// keep paths and simplification chords inside real coverage.
+function isCovered(raster, point) {
+  const x = Math.floor(point[0]) - raster.x,
+    y = Math.floor(point[1]) - raster.y;
+  return (
+    x >= 0 &&
+    y >= 0 &&
+    x < raster.width &&
+    y < raster.height &&
+    Boolean(raster.coverage[y * raster.width + x])
+  );
+}
+
+// Radius ladder for adaptive widening: start small (fast, precise, and
+// unlikely to jump onto a nearby parallel path) and double until `maximum`.
+function searchRadii(initial, maximum) {
+  const radii = [initial];
+  while (radii[radii.length - 1] < maximum) {
+    radii.push(Math.min(maximum, radii[radii.length - 1] * 2));
+  }
+  return radii;
+}
+
+// Build the "tracking surface": a copy of the raster whose density is locally
+// contrast-normalised (0..1 relative to the strongest heat nearby).
+//
+// The raw raster answers "how hot is this pixel?"; the tracking surface
+// answers "is this pixel a local ridge?". Discovery – snapping and tracing –
+// runs on the tracking surface so a faint but consistent forest trail is
+// followed just like a bright road. The small absolute floor keeps isolated
+// compression specks from being amplified into convincing trails. Geometry
+// quality decisions elsewhere still use the RAW density, so a wide saturated
+// band is not mistaken for a narrow ridge.
+//
+// The neighbourhood maximum is computed with a sliding-window deque (a
+// monotonic maximum filter) in two passes – rows, then columns – which is
+// O(pixels) instead of O(pixels × radius²).
+async function trackingSurface(raster, scale, options) {
+  const radius = Math.max(1, Math.ceil(SLIDE_DEFAULTS.contrastRadiusMeters / scale));
+  const { width, height, density, coverage } = raster;
+  const horizontal = new Float32Array(density.length);
+  const signal = new Float32Array(density.length);
+  const queue = new Int32Array(Math.max(width, height));
+  const value = (index) => (coverage[index] ? density[index] : 0);
+  for (let y = 0; y < height; y++) {
+    if (y % 64 === 0) {
+      await options.yield();
+      checkAbort(options.signal);
+    }
+    const row = y * width;
+    let head = 0,
+      tail = 0,
+      next = 0;
+    for (let x = 0; x < width; x++) {
+      const right = Math.min(width - 1, x + radius);
+      while (next <= right) {
+        const v = value(row + next);
+        while (tail > head && value(row + queue[tail - 1]) <= v) tail--;
+        queue[tail++] = next++;
+      }
+      while (queue[head] < x - radius) head++;
+      horizontal[row + x] = value(row + queue[head]);
+    }
+  }
+  let hasSignal = false;
+  for (let x = 0; x < width; x++) {
+    if (x % 64 === 0) {
+      await options.yield();
+      checkAbort(options.signal);
+    }
+    let head = 0,
+      tail = 0,
+      next = 0;
+    for (let y = 0; y < height; y++) {
+      const bottom = Math.min(height - 1, y + radius);
+      while (next <= bottom) {
+        const v = horizontal[next * width + x];
+        while (tail > head && horizontal[queue[tail - 1] * width + x] <= v) tail--;
+        queue[tail++] = next++;
+      }
+      while (queue[head] < y - radius) head++;
+      const index = y * width + x;
+      signal[index] = value(index) / Math.max(0.004, horizontal[queue[head] * width + x]);
+      if (signal[index] >= 0.25) hasSignal = true;
+    }
+  }
+  if (!hasSignal) throw noSignal('No usable heatmap trail is visible in this area.');
+  return { ...raster, density: signal };
+}
+
+// Move one original vertex onto the nearest convincing trail point within
+// `radius` pixels; returns undefined when there is none. Candidates are
+// filtered by the signal threshold BEFORE the distance penalty is applied —
+// otherwise a dark unsnapped pixel could outscore a weak visible trail and
+// then fail the threshold afterwards.
+function snap(raster, point, radius) {
+  let best,
+    bestScore = -Infinity;
+  for (let y = Math.floor(point[1] - radius); y <= Math.ceil(point[1] + radius); y++) {
+    for (let x = Math.floor(point[0] - radius); x <= Math.ceil(point[0] + radius); x++) {
+      const distance = Math.hypot(x - point[0], y - point[1]);
+      const index = (y - raster.y) * raster.width + x - raster.x;
+      if (
+        distance > radius ||
+        x < raster.x ||
+        y < raster.y ||
+        x >= raster.x + raster.width ||
+        y >= raster.y + raster.height ||
+        !raster.coverage[index]
+      )
+        continue;
+      // Filter candidates BEFORE applying the distance penalty. Otherwise a
+      // dark unsnapped point can beat a visible weak trail and fail afterwards.
+      if (raster.density[index] < 0.25) continue;
+      const score = raster.density[index] - 0.12 * (distance / radius) ** 2;
+      if (score > bestScore) {
+        bestScore = score;
+        best = [x, y];
+      }
+    }
+  }
+  return best;
+}
+
+// Find the cheapest continuous grid path from `start` to `end` that stays
+// inside a corridor of `radius` pixels around the original segment
+// (`originalStart`/`originalEnd`). This is Dijkstra's algorithm over the
+// raster cells with 8-connectivity.
+//
+// Per-cell cost (cellCosts) strongly prefers high density (8·(1 − density)²),
+// with a small constant overhead and a mild penalty for straying from the
+// original line, so the result follows the ridge but does not drift sideways.
+// Adjacent cell costs are averaged for each step (trapezoid rule) so a step's
+// cost does not depend on which of its two ends it is evaluated from.
+//
+// The heap stores cost + a small straight-line distance-to-end term (an
+// A*-like tie-breaker). It does not change which path is cheapest, it just
+// expands cells roughly in the direction of travel, which speeds the search up.
+//
+// Afterwards the path is validated for continuity: a long dark interior
+// stretch means the corridor crossed a gap instead of following a trail. Such
+// paths raise SLIDE_NO_SIGNAL so the caller can retry with a wider radius.
+async function trace(raster, start, end, originalStart, originalEnd, radius, options) {
+  if (!isCovered(raster, start) || !isCovered(raster, end)) {
+    throw new Error('Heatmap coverage is incomplete at an endpoint.');
+  }
+  const minX = Math.max(
+    raster.x,
+    Math.floor(Math.min(originalStart[0], originalEnd[0], start[0], end[0]) - radius)
+  );
+  const minY = Math.max(
+    raster.y,
+    Math.floor(Math.min(originalStart[1], originalEnd[1], start[1], end[1]) - radius)
+  );
+  const maxX = Math.min(
+    raster.x + raster.width - 1,
+    Math.ceil(Math.max(originalStart[0], originalEnd[0], start[0], end[0]) + radius)
+  );
+  const maxY = Math.min(
+    raster.y + raster.height - 1,
+    Math.ceil(Math.max(originalStart[1], originalEnd[1], start[1], end[1]) + radius)
+  );
+  const width = maxX - minX + 1,
+    height = maxY - minY + 1;
+  const costs = new Float32Array(width * height).fill(Infinity);
+  const parents = new Int32Array(width * height).fill(-1);
+  const visited = new Uint8Array(width * height);
+  const cellCosts = new Float32Array(width * height).fill(Infinity);
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      const i = (y - minY) * width + x - minX;
+      const j = (y - raster.y) * raster.width + x - raster.x;
+      const distance = distanceToSegment([x, y], originalStart, originalEnd);
+      if (!raster.coverage[j] || distance > radius) continue;
+      cellCosts[i] =
+        0.06 + 8 * (1 - raster.density[j]) ** 2 + 0.04 * (distance / radius) ** 2;
+    }
+  }
+  const from = (Math.round(start[1]) - minY) * width + Math.round(start[0]) - minX;
+  const to = (Math.round(end[1]) - minY) * width + Math.round(end[0]) - minX;
+  if (!Number.isFinite(cellCosts[from]) || !Number.isFinite(cellCosts[to])) {
+    throw noSignal('The search corridor does not yet reach the snapped trail.');
+  }
+  const heap = new MinHeap();
+  costs[from] = 0;
+  heap.push({ index: from, cost: 0 });
+  let iterations = 0;
+  while (heap.items.length) {
+    const { index } = heap.pop();
+    if (visited[index]) continue;
+    visited[index] = 1;
+    if (index === to) break;
+    if (++iterations % 8192 === 0) {
+      await options.yield();
+      checkAbort(options.signal);
+    }
+    const x = index % width,
+      y = Math.floor(index / width);
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (
+          (!dx && !dy) ||
+          x + dx < 0 ||
+          y + dy < 0 ||
+          x + dx >= width ||
+          y + dy >= height
+        )
+          continue;
+        const next = index + dy * width + dx;
+        if (visited[next] || !Number.isFinite(cellCosts[next])) continue;
+        // Do not diagonally jump across holes in tile coverage/the corridor.
+        if (
+          dx &&
+          dy &&
+          (!Number.isFinite(cellCosts[index + dx]) ||
+            !Number.isFinite(cellCosts[index + dy * width]))
+        )
+          continue;
+        const cost =
+          costs[index] + (Math.hypot(dx, dy) * (cellCosts[index] + cellCosts[next])) / 2;
+        if (cost >= costs[next]) continue;
+        costs[next] = cost;
+        parents[next] = index;
+        heap.push({
+          index: next,
+          cost: cost + 0.06 * Math.hypot(minX + x + dx - end[0], minY + y + dy - end[1]),
+        });
+      }
+    }
+  }
+  if (!visited[to]) throw noSignal('No continuous heatmap coverage along this section.');
+  const points = [];
+  for (let i = to; i !== -1; i = parents[i])
+    points.push([minX + (i % width), minY + Math.floor(i / width)]);
+  points.reverse();
+  points[0] = start;
+  points[points.length - 1] = end;
+  // Evaluate continuity in locally normalized signal, not absolute brightness.
+  // A fixed endpoint may be off-trail: allow a bounded approach at either end,
+  // but never treat a long dark interior shortcut as a traced trail.
+  const support = points.map((p) => sampleDensity(raster, p) >= 0.12);
+  const first = support.indexOf(true),
+    last = support.lastIndexOf(true);
+  let leading = 0,
+    trailing = 0,
+    gap = 0,
+    longestGap = 0,
+    dark = 0;
+  let supportedLength = 0,
+    totalLength = 0;
+  for (let i = 1; i < points.length; i++) {
+    const length = Math.hypot(
+      points[i][0] - points[i - 1][0],
+      points[i][1] - points[i - 1][1]
+    );
+    totalLength += length;
+    if (support[i] && support[i - 1]) supportedLength += length;
+  }
+  for (let i = 1; i <= first; i++)
+    leading += Math.hypot(
+      points[i][0] - points[i - 1][0],
+      points[i][1] - points[i - 1][1]
+    );
+  for (let i = last + 1; i < points.length && i > 0; i++)
+    trailing += Math.hypot(
+      points[i][0] - points[i - 1][0],
+      points[i][1] - points[i - 1][1]
+    );
+  for (let i = first; i <= last && i >= 0; i++) {
+    if (support[i]) gap = 0;
+    else {
+      dark++;
+      gap += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+      longestGap = Math.max(longestGap, gap);
+    }
+  }
+  const maxGap = 12 / options.scale;
+  if (
+    first === -1 ||
+    leading > radius + 2 ||
+    trailing > radius + 2 ||
+    longestGap > maxGap ||
+    dark > Math.max(3, (last - first + 1) * 0.15) ||
+    supportedLength < Math.min(20 / options.scale, totalLength * 0.5)
+  ) {
+    throw noSignal(
+      'No continuous nearby heatmap trail found. Add a guide vertex to select the intended trail.'
+    );
+  }
+  return points;
+}
+
+// Reduce the traced pixel path to a handful of vertices – Douglas–Peucker
+// with `tolerance` pixels – with two guards that plain Douglas–Peucker lacks:
+//   * coverage guard: the replacement chord must not cut across missing tiles
+//     that the traced grid path deliberately went around;
+//   * density guard:  a vertex is kept when replacing it would measurably
+//     leave the density ridge. Clipping a narrow bend is invisible to the
+//     metric error alone but obvious on the heatmap.
+// Works on pixel points; the caller converts them to locations afterwards.
+function simplify(points, tolerance, raster) {
+  if (points.length <= 2) return points;
+  const keep = new Uint8Array(points.length);
+  keep[0] = keep[points.length - 1] = 1;
+  const stack = [[0, points.length - 1]];
+  while (stack.length) {
+    const [start, end] = stack.pop();
+    let farthest = -1,
+      maxDistance = tolerance;
+    for (let i = start + 1; i < end; i++) {
+      const distance = distanceToSegment(points[i], points[start], points[end]);
+      if (distance > maxDistance) {
+        farthest = i;
+        maxDistance = distance;
+      }
+    }
+    if (farthest === -1 && end > start + 1) {
+      // Douglas–Peucker's geometric error alone can accept a chord that clips
+      // a narrow bend. Keep a vertex if its replacement materially leaves the
+      // density ridge, even when that chord is within the metric tolerance.
+      const a = points[start],
+        b = points[end];
+      const dx = b[0] - a[0],
+        dy = b[1] - a[1],
+        length = dx * dx + dy * dy;
+      // A simplification must not cut across a missing tile corner that the
+      // traced grid path avoided. Check the whole chord, not just its ends.
+      const steps = Math.max(1, Math.ceil(Math.sqrt(length) * 2));
+      for (let step = 0; step <= steps; step++) {
+        const t = step / steps;
+        if (!isCovered(raster, [a[0] + t * dx, a[1] + t * dy])) {
+          farthest = Math.max(
+            start + 1,
+            Math.min(end - 1, Math.round(start + t * (end - start)))
+          );
+          break;
+        }
+      }
+      let worstLoss = 0.06;
+      for (let i = start + 1; i < end; i++) {
+        const p = points[i];
+        const t = length
+          ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length))
+          : 0;
+        const replacement = [a[0] + t * dx, a[1] + t * dy];
+        const loss = sampleDensity(raster, p) - sampleDensity(raster, replacement);
+        if (loss > worstLoss) {
+          farthest = i;
+          worstLoss = loss;
+        }
+      }
+    }
+    if (farthest !== -1) {
+      keep[farthest] = 1;
+      stack.push([start, farthest], [farthest, end]);
+    }
+  }
+  return points.filter((_, i) => keep[i]);
+}
+
+// Slide an entire line.
+//
+// Inputs:
+//   locations – the original [lon, lat] vertices of the selected way/range
+//   raster    – the merged heatmap raster (createHeatmapRaster)
+//   options   – fixedIndices (indices that must not move: range endpoints are
+//               always fixed, plus tagged nodes and junctions passed in by the
+//               caller), signal (AbortSignal), yield (async hook so long loops
+//               can repaint), onProgress (0..1), plus the metre-based knobs
+//               documented in SLIDE_DEFAULTS.
+//
+// Returns ordered records { loc, nodeIndex }: nodeIndex identifies the
+// original vertex a point came from, or null for a point Slide created. Every
+// original vertex appears exactly once and in ascending order — action.js
+// relies on that to keep OSM node IDs (and with them tags and connections)
+// where possible, and to drop vertices closer than 1 m (preferring
+// slide-created ones, never protected database nodes).
+export async function slideLine(locations, raster, options = {}) {
+  if (
+    locations.length < 2 ||
+    locations.length > 1000 ||
+    locations.some(
+      (p) =>
+        !Array.isArray(p) ||
+        p.length !== 2 ||
+        !p.every(Number.isFinite) ||
+        Math.abs(p[1]) > 85.05112878 ||
+        Math.abs(p[0]) > 180
+    )
+  ) {
+    throw new Error('Slide requires between 2 and 1000 valid line vertices.');
+  }
+  options = { yield: () => new Promise((resolve) => setTimeout(resolve, 0)), ...options };
+  checkAbort(options.signal);
+  const scale = metersPerPixel(locations[0][1], raster.zoom);
+  const searchMeters = options.searchRadiusMeters ?? SLIDE_DEFAULTS.searchRadiusMeters;
+  const snapMeters = options.snapRadiusMeters ?? SLIDE_DEFAULTS.snapRadiusMeters;
+  // Explicit radii remain hard limits unless a larger maximum is requested.
+  const maxSearchMeters =
+    options.maxSearchRadiusMeters ??
+    (options.searchRadiusMeters === undefined
+      ? SLIDE_DEFAULTS.maxSearchRadiusMeters
+      : searchMeters);
+  const maxSnapMeters =
+    options.maxSnapRadiusMeters ??
+    (options.snapRadiusMeters === undefined
+      ? Math.min(SLIDE_DEFAULTS.maxSnapRadiusMeters, maxSearchMeters)
+      : snapMeters);
+  const radius = searchMeters / scale,
+    snapRadius = snapMeters / scale;
+  // 1.2 m was only about half a zoom-15 pixel (~2.39 m/pixel here), so the old
+  // Douglas–Peucker pass retained raster stair-steps as tiny 45°/90° bends.
+  // Two meters removes that quantization noise; the density guard protects
+  // genuine tight bends. Original vertices remain segment endpoints throughout.
+  const tolerance = (options.simplifyMeters ?? SLIDE_DEFAULTS.simplifyMeters) / scale;
+  if (!Number.isFinite(tolerance) || tolerance < 0)
+    throw new Error('Invalid Slide simplification tolerance.');
+  if (
+    ![searchMeters, snapMeters, maxSearchMeters, maxSnapMeters].every(Number.isFinite) ||
+    !(radius > 0) ||
+    !(snapRadius > 0) ||
+    snapRadius > radius ||
+    maxSearchMeters < searchMeters ||
+    maxSnapMeters < snapMeters ||
+    maxSnapMeters > maxSearchMeters
+  )
+    throw new Error('Invalid Slide search radius.');
+  options.scale = scale;
+  // 1) Discovery surface: locally contrast-normalised density.
+  const tracking = await trackingSurface(raster, scale, options);
+  const originals = locations.map((loc) => project(loc, raster.zoom));
+  const fixed = new Set([0, locations.length - 1, ...(options.fixedIndices || [])]);
+  const snapSearches = searchRadii(snapRadius, maxSnapMeters / scale);
+  // 2) Snap every vertex to a trail point ("anchor"). Fixed vertices are their
+  //    own anchors, so endpoints and junctions never move. Snapping widens
+  //    adaptively before giving up, because the drawn line may be far from the
+  //    trail or the heat may be weak.
+  const anchors = [];
+  for (let i = 0; i < originals.length; i++) {
+    await options.yield();
+    checkAbort(options.signal);
+    let anchor = fixed.has(i) ? originals[i] : null;
+    for (const r of snapSearches) {
+      if (anchor) break;
+      anchor = snap(tracking, originals[i], r);
+    }
+    if (!anchor)
+      throw noSignal(
+        `No nearby heatmap trail within ${maxSnapMeters} m of vertex ${i + 1}. Add a guide vertex closer to the intended trail.`
+      );
+    anchors.push(anchor);
+  }
+  // 3) Trace the ridge from anchor to anchor, segment by segment. Each segment
+  //    is simplified on its own and contributes: the interior simplified
+  //    vertices (slide-created, nodeIndex null) followed by the segment's end
+  //    vertex (nodeIndex i).
+  const result = [{ loc: locations[0].slice(), nodeIndex: 0 }];
+  for (let i = 1; i < originals.length; i++) {
+    await options.yield();
+    checkAbort(options.signal);
+    let path;
+    // Start with a narrow corridor (precise on hairpins) and widen only when
+    // the trail cannot be reached or is not continuous within it.
+    for (const r of searchRadii(radius, maxSearchMeters / scale)) {
+      try {
+        path = await trace(
+          tracking,
+          anchors[i - 1],
+          anchors[i],
+          originals[i - 1],
+          originals[i],
+          r,
+          options
+        );
+        break;
+      } catch (error) {
+        if (error.code !== 'SLIDE_NO_SIGNAL' || r === maxSearchMeters / scale)
+          throw error;
+        await options.yield();
+        checkAbort(options.signal);
+      }
+    }
+    const reduced = simplify(path, tolerance, tracking);
+    // The path's first and last pixel are the anchors themselves, which the
+    // next loop iteration emits as segment endpoints — skip them here.
+    for (let j = 1; j < reduced.length - 1; j++) {
+      result.push({ loc: unproject(reduced[j], raster.zoom), nodeIndex: null });
+    }
+    result.push({
+      // Fixed vertices keep their original location verbatim; everything else
+      // takes the snapped anchor position.
+      loc: fixed.has(i) ? locations[i].slice() : unproject(anchors[i], raster.zoom),
+      nodeIndex: i,
+    });
+    options.onProgress?.(i / (originals.length - 1));
+  }
+  checkAbort(options.signal);
+  return result;
+}

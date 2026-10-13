@@ -48,6 +48,9 @@ const EARTH_CIRCUMFERENCE = 40075016.68557849;
 //   contrastRadiusMeters   – neighbourhood size of the contrast normalisation
 //   minTriangleSquareMeters – inserted vertices forming a smaller triangle with
 //                             their neighbours are dropped as noise
+//   avoidMeters            – a section is penalised for running this close to
+//                             the path traced by earlier sections (same value
+//                             as the duplicate-vertex merge in action.js)
 export const SLIDE_DEFAULTS = Object.freeze({
   searchRadiusMeters: 24,
   maxSearchRadiusMeters: 80,
@@ -56,6 +59,7 @@ export const SLIDE_DEFAULTS = Object.freeze({
   simplifyMeters: 2,
   contrastRadiusMeters: 12,
   minTriangleSquareMeters: 40,
+  avoidMeters: 4,
 });
 
 // Project [longitude, latitude] into Web-Mercator pixel coordinates at the
@@ -518,6 +522,13 @@ async function trace(raster, start, end, originalStart, originalEnd, radius, opt
       if (!raster.coverage[j] || distance > radius) continue;
       cellCosts[i] =
         0.06 + 8 * (1 - raster.density[j]) ** 2 + 0.04 * (distance / radius) ** 2;
+      // A trail never runs over itself: make re-using the path traced by
+      // earlier sections expensive, except where this section starts on it.
+      if (
+        options.avoid?.[j] &&
+        Math.hypot(x - start[0], y - start[1]) > options.avoidExclude
+      )
+        cellCosts[i] += 3;
     }
   }
   const from = (Math.round(start[1]) - minY) * width + Math.round(start[0]) - minX;
@@ -832,6 +843,29 @@ export async function slideLine(locations, raster, options = {}) {
   // whole line; only an all-skipped line fails. A skipped section's vertices go
   // back to where they were drawn (a widened snap may have pulled them tens of
   // metres onto a trail end), and its neighbours are traced again to them.
+  // Pixels within avoidMeters of the paths traced so far (sections before the
+  // one being traced), so a section does not fold back over earlier ones.
+  const avoidRadius = Math.ceil(SLIDE_DEFAULTS.avoidMeters / scale);
+  const avoidExclude = (2 * SLIDE_DEFAULTS.avoidMeters) / scale;
+  let avoid = new Uint8Array(tracking.width * tracking.height);
+  const markAvoid = (path) => {
+    for (const [px, py] of path) {
+      for (let dy = -avoidRadius; dy <= avoidRadius; dy++) {
+        for (let dx = -avoidRadius; dx <= avoidRadius; dx++) {
+          const x = Math.round(px) + dx - tracking.x,
+            y = Math.round(py) + dy - tracking.y;
+          if (dx * dx + dy * dy > avoidRadius * avoidRadius) continue;
+          if (x >= 0 && y >= 0 && x < tracking.width && y < tracking.height)
+            avoid[y * tracking.width + x] = 1;
+        }
+      }
+    }
+  };
+  const retraceSection = async (i) => {
+    avoid = new Uint8Array(tracking.width * tracking.height);
+    for (let k = 1; k < i; k++) if (paths[k]) markAvoid(paths[k]);
+    return traceSection(i);
+  };
   const traceSection = async (i) => {
     // Start with a narrow corridor (precise on hairpins) and widen only when
     // the trail cannot be reached or is not continuous within it.
@@ -846,7 +880,7 @@ export async function slideLine(locations, raster, options = {}) {
           originals[i - 1],
           originals[i],
           r,
-          options
+          { ...options, avoid, avoidExclude }
         );
       } catch (error) {
         if (error.code !== 'SLIDE_NO_SIGNAL') throw error;
@@ -857,6 +891,7 @@ export async function slideLine(locations, raster, options = {}) {
   const paths = [null];
   for (let i = 1; i < originals.length; i++) {
     paths[i] = await traceSection(i);
+    if (paths[i]) markAvoid(paths[i]);
     options.onProgress?.(i / (originals.length - 1));
   }
   for (let changed = true; changed;) {
@@ -868,9 +903,9 @@ export async function slideLine(locations, raster, options = {}) {
         unsnapped.add(v);
         anchors[v] = originals[v];
         changed = true;
-        if (v > 0 && paths[v]) paths[v] = await traceSection(v);
+        if (v > 0 && paths[v]) paths[v] = await retraceSection(v);
         if (v + 1 < originals.length && paths[v + 1])
-          paths[v + 1] = await traceSection(v + 1);
+          paths[v + 1] = await retraceSection(v + 1);
       }
     }
   }

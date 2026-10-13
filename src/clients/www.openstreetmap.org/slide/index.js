@@ -292,7 +292,7 @@ export async function setupSlide(context, isAuthenticated) {
     operation.tooltip = () =>
       // While disabled, iD shows the reason instead of the tooltip text.
       operation.disabled() ||
-      'Slide the selected line or vertex range along the Strava heatmap (Shift+S). Removes redundant vertices closer than 1 m; Undo restores them.';
+      'Slide the selected line or vertex range along the Strava heatmap (Shift+S). Undo restores them.';
     return operation;
   }
 

@@ -244,6 +244,17 @@ export async function setupSlide(context, isAuthenticated) {
           throw error;
         }
         context.validator().validate();
+        if (result.skipped) {
+          const sections = result.skipped === 1 ? 'section' : 'sections';
+          context
+            .ui()
+            .flash.duration(7000)
+            .label(
+              label(
+                `${result.skipped} ${sections} without a usable heatmap trail left as drawn.`
+              )
+            )();
+        }
       } catch (error) {
         if (error.name !== 'AbortError') {
           console.warn('[StravaHeatmapExt] Slide failed:', error);

@@ -486,7 +486,7 @@ function snap(raster, point, radius) {
 // paths raise SLIDE_NO_SIGNAL so the caller can retry with a wider radius.
 async function trace(raster, start, end, originalStart, originalEnd, radius, options) {
   if (!isCovered(raster, start) || !isCovered(raster, end)) {
-    throw new Error('Heatmap coverage is incomplete at an endpoint.');
+    throw noSignal('Heatmap coverage is incomplete at an endpoint.');
   }
   const minX = Math.max(
     raster.x,
@@ -808,6 +808,8 @@ export async function slideLine(locations, raster, options = {}) {
   //    adaptively before giving up, because the drawn line may be far from the
   //    trail or the heat may be weak.
   const anchors = [];
+  // Vertices with no trail nearby stay where they were drawn.
+  const unsnapped = new Set();
   for (let i = 0; i < originals.length; i++) {
     await options.yield();
     checkAbort(options.signal);
@@ -816,26 +818,28 @@ export async function slideLine(locations, raster, options = {}) {
       if (anchor) break;
       anchor = snap(tracking, originals[i], r);
     }
-    if (!anchor)
-      throw noSignal(
-        `No nearby heatmap trail within ${maxSnapMeters} m of vertex ${i + 1}. Add a guide vertex closer to the intended trail.`
-      );
+    if (!anchor) {
+      anchor = originals[i];
+      unsnapped.add(i);
+    }
     anchors.push(anchor);
   }
   // 3) Trace the ridge from anchor to anchor, segment by segment. Each segment
   //    is simplified on its own and contributes: the interior simplified
   //    vertices (slide-created, nodeIndex null) followed by the segment's end
   //    vertex (nodeIndex i).
-  const result = [{ loc: locations[0].slice(), nodeIndex: 0 }];
-  for (let i = 1; i < originals.length; i++) {
-    await options.yield();
-    checkAbort(options.signal);
-    let path;
+  // Sections without a usable trail are left as drawn instead of failing the
+  // whole line; only an all-skipped line fails. A skipped section's vertices go
+  // back to where they were drawn (a widened snap may have pulled them tens of
+  // metres onto a trail end), and its neighbours are traced again to them.
+  const traceSection = async (i) => {
     // Start with a narrow corridor (precise on hairpins) and widen only when
     // the trail cannot be reached or is not continuous within it.
     for (const r of searchRadii(radius, maxSearchMeters / scale)) {
+      await options.yield();
+      checkAbort(options.signal);
       try {
-        path = await trace(
+        return await trace(
           tracking,
           anchors[i - 1],
           anchors[i],
@@ -844,27 +848,62 @@ export async function slideLine(locations, raster, options = {}) {
           r,
           options
         );
-        break;
       } catch (error) {
-        if (error.code !== 'SLIDE_NO_SIGNAL' || r === maxSearchMeters / scale)
-          throw error;
-        await options.yield();
-        checkAbort(options.signal);
+        if (error.code !== 'SLIDE_NO_SIGNAL') throw error;
       }
     }
-    const reduced = removeSmallTurns(simplify(path, tolerance, tracking), minArea);
+    return null;
+  };
+  const paths = [null];
+  for (let i = 1; i < originals.length; i++) {
+    paths[i] = await traceSection(i);
+    options.onProgress?.(i / (originals.length - 1));
+  }
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let i = 1; i < originals.length; i++) {
+      if (paths[i]) continue;
+      for (const v of [i - 1, i]) {
+        if (fixed.has(v) || unsnapped.has(v)) continue;
+        unsnapped.add(v);
+        anchors[v] = originals[v];
+        changed = true;
+        if (v > 0 && paths[v]) paths[v] = await traceSection(v);
+        if (v + 1 < originals.length && paths[v + 1])
+          paths[v + 1] = await traceSection(v + 1);
+      }
+    }
+  }
+  // A section touching a vertex left off-trail is drawn straight too: tracing
+  // into the dark only wanders.
+  const traced = paths.map(
+    (path, i) => Boolean(path) && !unsnapped.has(i - 1) && !unsnapped.has(i)
+  );
+  const result = [{ loc: locations[0].slice(), nodeIndex: 0 }];
+  result.skipped = traced.filter((ok, i) => i && !ok).length;
+  if (result.skipped === originals.length - 1) {
+    throw noSignal(
+      'No continuous nearby heatmap trail found. Add a guide vertex to select the intended trail.'
+    );
+  }
+  for (let i = 1; i < originals.length; i++) {
+    const reduced = traced[i]
+      ? removeSmallTurns(simplify(paths[i], tolerance, tracking), minArea)
+      : [];
     // The path's first and last pixel are the anchors themselves, which the
-    // next loop iteration emits as segment endpoints — skip them here.
+    // next iteration emits as section endpoints — skip them here.
     for (let j = 1; j < reduced.length - 1; j++) {
       result.push({ loc: unproject(reduced[j], raster.zoom), nodeIndex: null });
     }
     result.push({
-      // Fixed vertices keep their original location verbatim; everything else
-      // takes the snapped anchor position.
-      loc: fixed.has(i) ? locations[i].slice() : unproject(anchors[i], raster.zoom),
+      // Fixed and unsnapped vertices keep their original location verbatim;
+      // everything else takes the snapped anchor position.
+      loc:
+        fixed.has(i) || unsnapped.has(i)
+          ? locations[i].slice()
+          : unproject(anchors[i], raster.zoom),
       nodeIndex: i,
     });
-    options.onProgress?.(i / (originals.length - 1));
   }
   checkAbort(options.signal);
   return result;
@@ -889,8 +928,10 @@ export async function slideLineTwice(locations, raster, options = {}) {
       onProgress: half(0.5),
     }
   );
-  return second.map((record) => ({
+  const result = second.map((record) => ({
     loc: record.loc,
     nodeIndex: record.nodeIndex === null ? null : first[record.nodeIndex].nodeIndex,
   }));
+  result.skipped = first.skipped;
+  return result;
 }

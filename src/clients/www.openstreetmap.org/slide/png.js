@@ -94,7 +94,7 @@ export async function decodeHeatmapPNG(bytes, signal) {
   const compressed = [];
   // Walk the chunk list; `offset` always sits at a chunk header and steps over
   // length (4) + type (4) + data + CRC (4).
-  for (let offset = 8; offset < bytes.length; ) {
+  for (let offset = 8; offset < bytes.length;) {
     if (offset + 12 > bytes.length) throw new Error('Truncated heatmap PNG.');
     const length = view.getUint32(offset);
     if (length > bytes.length - offset - 12)

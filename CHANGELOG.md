@@ -2,6 +2,10 @@
 
 ## Versions
 
+### `0.15.0` (2026-10-13)
+
+- [iD] Add "Strava Slide": press Shift+S, or right-click a line and choose Slide, to snap it onto the heatmap trail. Endpoints, tagged nodes and junctions stay fixed, and one Undo restores the line. Thanks @rene78 (#43, #45)
+
 ### `0.14.0` (2026-10-12)
 
 - [iD] Switch to Strava's new `grayscale` heatmap tiles (`v=20`), colorized in the browser with Strava's exact color palettes (#41)

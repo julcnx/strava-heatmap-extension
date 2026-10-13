@@ -4,10 +4,17 @@
 
 ### `0.15.0` (2026-10-13)
 
-- [iD] Add "Strava Slide": press Shift+S, or right-click a line and choose Slide, to snap it onto the heatmap trail. One Undo restores the line. Thanks @rene78 (#43, #45)
-  - Untagged junctions and line ends move onto the trail (at most 18 m); tagged nodes, relation members, bridges, tunnels and short ways stay in place
-  - Sections without a usable heatmap trail are left as drawn instead of failing the whole line
-  - Avoids running along other roads into a junction, folding back over itself, spikes and near-duplicate points
+- [iD] New **Strava Slide**: press Shift+S, or right-click a line and choose Slide, to snap a roughly drawn line onto the heatmap trail. One Undo restores it. By @rene78 (#43, #45):
+  - Local, dependency-free port inspired by Paul Mach's Slide and Strava's iD integration: traces the heatmap ridge between the line's points, so tight switchbacks are kept
+  - Finds faint trails and lines drawn far from the trail, and handles missing heatmap tiles
+  - Removes duplicate points, keeps tags and connections, and never edits a line changed while Slide was running
+  - Activity picker when several Strava overlays are enabled, progress dialog with cancel, theme-aware icon, and support for Strava's new grayscale tiles
+- [iD] Strava Slide improvements:
+  - Untagged junctions and line ends also move onto the trail (at most 18 m); tagged nodes, relation members, bridges, tunnels and short ways stay in place
+  - Works on closed lines; sections without a usable heatmap trail are left as drawn instead of failing the whole line
+  - Avoids running along other roads into a junction, folding back over itself, spikes and near-duplicate points; one Shift+S runs two smoothing passes
+  - Shift+S works right after drawing a line; Slide sits after Straighten in the edit menu; clearer, colored messages
+- [iD] Show a one-time notice on mapping responsibly with the Strava heatmap
 - [iD] List the extension's shortcuts (Shift+Q, Shift+W, Shift+S) in iD's keyboard shortcuts panel
 
 ### `0.14.0` (2026-10-12)

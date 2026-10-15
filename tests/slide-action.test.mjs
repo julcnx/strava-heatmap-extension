@@ -100,7 +100,7 @@ test('fixed vertices: tagged, relation members, junctions, partial-range boundar
   assert.deepEqual(fixedIndices(graph, partial), [0]);
 });
 
-test('every junction stays fixed; free line ends may move', () => {
+test('every junction stays fixed; free line ends are left to the caller', () => {
   const nodes = {
     a: new Node('a', at(0, 0)),
     b: new Node('b', at(100, 0)),
@@ -143,13 +143,13 @@ test('moving a junction or a tagged node is refused and nothing is edited', () =
   }
 });
 
-test('vertices closer than 4 m merge; Slide-created ones go first', () => {
+test('vertices closer than 1.5 m merge; Slide-created ones go first', () => {
   const { graph, selection } = junctionCase();
   const result = [
     { loc: at(0, 0), nodeIndex: 0 },
     { loc: at(30, 15), nodeIndex: null },
     { loc: at(55, 33), nodeIndex: 1 },
-    { loc: at(57, 33), nodeIndex: null }, // 2 m from b
+    { loc: at(56, 33), nodeIndex: null }, // 1 m from b
     { loc: at(110, 33), nodeIndex: 2 },
   ];
   const cleaned = cleanSlideResult(graph, selection, result);

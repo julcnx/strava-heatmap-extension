@@ -6,6 +6,7 @@ import {
   createHeatmapRaster,
   project,
   slideLine,
+  slideLineTwice,
 } from '../src/clients/www.openstreetmap.org/slide/algorithm.js';
 
 // Metres east/north of a point in southern Spain (Example 3 of #43) as [lon, lat].
@@ -87,13 +88,14 @@ test('a tight bend keeps enough points to follow the trail', async () => {
 });
 
 test('a stronger trail along another mapped way does not pull the line', async () => {
-  // A busy road along x = 0, mapped, and a faint path 10 m west of it. The
-  // path is drawn roughly, 4 m off its trail towards the road.
+  // A busy road along x = 0, mapped, and a faint path 14 m west of it (a
+  // path within 10 m of a mapped way is left as drawn). The path is drawn
+  // roughly, 4 m off its trail towards the road.
   const road = [],
     path = [];
   for (let y = 0; y >= -200; y -= 2) {
     road.push([0, y]);
-    path.push([-10, y]);
+    path.push([-14, y]);
   }
   const raster = createHeatmapRaster(
     trailTiles([
@@ -103,15 +105,15 @@ test('a stronger trail along another mapped way does not pull the line', async (
     15
   );
   const rough = [
-    [-10, 0],
-    [-6, -60],
-    [-6, -140],
-    [-10, -200],
+    [-14, 0],
+    [-10, -60],
+    [-10, -140],
+    [-14, -200],
   ].map(at);
   const options = { fixedIndices: [0, 3], yield: async () => {} };
   const offPath = async (extra) => {
     const result = await slideLine(rough, raster, { ...options, ...extra });
-    return Math.max(...result.map((point) => Math.abs(metres(point.loc)[0] + 10)));
+    return Math.max(...result.map((point) => Math.abs(metres(point.loc)[0] + 14)));
   };
   // Without the map the road's heat is a threat: the line is pulled onto it,
   // or not slid at all.
@@ -188,13 +190,13 @@ test('a line drawn on a faint trail stays on it, next to a bright unmapped one',
 });
 
 test('a path branching off a mapped road still slides from the junction', async () => {
-  // The path leaves the road at (0, 0), heads south-west, then runs 10 m west
+  // The path leaves the road at (0, 0), heads south-west, then runs 14 m west
   // of it.
   const road = [],
     path = [];
   for (let y = 50; y >= -200; y -= 2) road.push([0, y]);
-  for (let s = 0; s <= 20; s += 1) path.push([-s / 2, -s]);
-  for (let y = -22; y >= -200; y -= 2) path.push([-10, y]);
+  for (let s = 0; s <= 20; s += 1) path.push([-0.7 * s, -s]);
+  for (let y = -22; y >= -200; y -= 2) path.push([-14, y]);
   const raster = createHeatmapRaster(
     trailTiles([
       { centre: road, peak: 1.3 },
@@ -204,9 +206,9 @@ test('a path branching off a mapped road still slides from the junction', async 
   );
   const rough = [
     [0, 0],
-    [-6, -60],
-    [-6, -140],
-    [-10, -200],
+    [-10, -60],
+    [-10, -140],
+    [-14, -200],
   ].map(at);
   const result = await slideLine(rough, raster, {
     fixedIndices: [0, 3],
@@ -215,7 +217,15 @@ test('a path branching off a mapped road still slides from the junction', async 
   });
   const offPath = (p) =>
     Math.min(...path.map((c) => Math.hypot(c[0] - p[0], c[1] - p[1])));
-  const off = Math.max(...result.map((point) => offPath(metres(point.loc))));
+  // Near the junction both trails share heat (action.js trims the overlap);
+  // beyond, the line follows its own path.
+  assert.equal(result.skipped, 0);
+  const off = Math.max(
+    ...result
+      .map((point) => metres(point.loc))
+      .filter((p) => p[1] < -25)
+      .map(offPath)
+  );
   assert.ok(off < 3, `line runs ${off.toFixed(1)} m off the path`);
 });
 
@@ -248,4 +258,67 @@ test('a section never jumps to another heat trace', async () => {
   assert.ok(result.skipped > 0); // the middle is left as drawn
   const off = Math.max(...result.map((point) => Math.abs(metres(point.loc)[0] + 10)));
   assert.ok(off < 3, `line jumps ${off.toFixed(1)} m off the path`);
+});
+
+test('free drawn points on a straight trail are dropped', async () => {
+  // A straight trail along x = 0, drawn with a point every 20 m, each slightly
+  // off. Only the line's ends are needed.
+  const centre = [];
+  for (let y = 0; y >= -200; y -= 2) centre.push([0, y]);
+  const raster = createHeatmapRaster(trailTiles([{ centre, peak: 1 }]), 15);
+  const rough = [];
+  for (let y = 0; y >= -200; y -= 20) rough.push(at([y % 40 ? 1 : -1, y]));
+  const result = await slideLine(rough, raster, {
+    fixedIndices: [0, rough.length - 1],
+    yield: async () => {},
+  });
+  assert.ok(result.length < 5, `${result.length} points on a straight trail`);
+});
+
+test('a drawn zigzag narrower than the trail is kept as drawn', async () => {
+  // A straight trail along x = 0, too coarse to show a tight switchback,
+  // drawn as a zigzag of ±2 m with 6 m legs in its middle.
+  const centre = [];
+  for (let y = 0; y >= -200; y -= 2) centre.push([0, y]);
+  const raster = createHeatmapRaster(trailTiles([{ centre, peak: 1 }]), 15);
+  const zigzag = [];
+  for (let k = 0; k <= 8; k++) zigzag.push([k % 2 ? 2 : -2, -80 - 5 * k]);
+  const rough = [[0, 0], ...zigzag, [0, -200]].map(at);
+  const result = await slideLine(rough, raster, {
+    fixedIndices: [0, rough.length - 1],
+    yield: async () => {},
+  });
+  for (let k = 2; k < zigzag.length - 2; k++) {
+    const point = result.find((p) => p.nodeIndex === k + 1);
+    assert.ok(point, `zigzag point ${k} dropped`);
+    const moved = Math.hypot(...metres(point.loc).map((v, i) => v - zigzag[k][i]));
+    assert.ok(moved < 0.5, `zigzag point ${k} moved ${moved.toFixed(1)} m`);
+  }
+});
+
+test('a turn is smoothed with extra points that stay on the trail', async () => {
+  // West along y = 0, then a right-angle turn south at (0, 0), drawn with one
+  // corner point.
+  const centre = [];
+  for (let x = 150; x >= 0; x -= 2) centre.push([x, 0]);
+  for (let y = -2; y >= -150; y -= 2) centre.push([0, y]);
+  const raster = createHeatmapRaster(trailTiles([{ centre, peak: 1 }]), 15);
+  const rough = [
+    [150, 0],
+    [0, 0],
+    [0, -150],
+  ].map(at);
+  const result = await slideLineTwice(rough, raster, {
+    fixedIndices: [0, 2],
+    yield: async () => {},
+  });
+  const near = result.filter((p) => Math.hypot(...metres(p.loc)) < 20);
+  assert.ok(near.length >= 3, `${near.length} points within 20 m of the turn`);
+  const off = Math.max(
+    ...result.map((p) => {
+      const [x, y] = metres(p.loc);
+      return Math.min(Math.abs(y) + (x < 0 ? -x : 0), Math.abs(x) + (y > 0 ? y : 0));
+    })
+  );
+  assert.ok(off < 4, `line runs ${off.toFixed(1)} m off the trail`);
 });

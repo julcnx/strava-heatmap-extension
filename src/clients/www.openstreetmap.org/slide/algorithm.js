@@ -612,7 +612,7 @@ const HOLD_TURN_DEGREES = 35;
 const HOLD_LEG_METERS = 12;
 // ... and only while it swings at most this far from the band's ridge: a
 // wider zigzag would show in the heat.
-const HOLD_MAX_OFFSET_METERS = 3;
+const HOLD_MAX_OFFSET_METERS = 4;
 function snap(raster, point, radius, normal, align = radius, hold = 0) {
   const zone = (p) => {
     if (!raster.near) return 0;

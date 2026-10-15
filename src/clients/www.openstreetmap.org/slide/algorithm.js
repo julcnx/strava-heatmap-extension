@@ -60,7 +60,7 @@ export const SLIDE_DEFAULTS = Object.freeze({
   maxSnapRadiusMeters: 60,
   simplifyMeters: 2,
   contrastRadiusMeters: 12,
-  minTriangleSquareMeters: 40,
+  minTriangleSquareMeters: 10,
   avoidMeters: 4,
   approachFactor: 3,
 });

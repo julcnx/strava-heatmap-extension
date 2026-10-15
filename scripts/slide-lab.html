@@ -1,0 +1,234 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Slide lab</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="slide-lab-ways.js"></script>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; background: #111; color: #eee; }
+  form { padding: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #map { position: absolute; top: 48px; bottom: 0; left: 0; right: 300px; background: #000; }
+  #list { position: absolute; top: 48px; bottom: 0; right: 0; width: 300px; overflow-y: auto; box-sizing: border-box;
+    padding: 8px; background: #161616; border-left: 1px solid #333; }
+  #add { width: 100%; margin-bottom: 8px; padding: 5px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; cursor: pointer; }
+  #add:disabled { opacity: 0.4; cursor: default; }
+  #filters { display: flex; flex-wrap: wrap; gap: 4px; padding-bottom: 8px; border-bottom: 1px solid #333; margin-bottom: 4px; }
+  .item { padding: 6px 4px; border-bottom: 1px solid #262626; }
+  .item.current { background: #1f2a1a; }
+  .item .head { display: flex; gap: 6px; align-items: baseline; cursor: pointer; }
+  .item .head b { color: #8cf; font-weight: 600; }
+  .item .head span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.8; }
+  .item .head button { background: none; border: 0; color: #888; cursor: pointer; }
+  .chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+  .chip { font: 11px system-ui; padding: 1px 7px; border-radius: 9px; border: 1px solid #444; background: none; color: #999; cursor: pointer; }
+  .chip.on { background: #7dff3a; border-color: #7dff3a; color: #111; }
+  .chip.bad.on { background: #ff3cf0; border-color: #ff3cf0; }
+  #loading { position: absolute; top: 48px; bottom: 0; left: 0; right: 300px; z-index: 1000; display: none;
+    align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.45); pointer-events: none; }
+  #loading.on { display: flex; }
+  #loading div { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-radius: 8px; background: #222; font-size: 15px; }
+  #loading div::before { content: ''; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #555;
+    border-top-color: #7dff3a; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .heat { filter: url(#heat-orange); }
+  .base { filter: brightness(0.45); }
+  #status { opacity: 0.8; }
+  .legend span { padding: 0 4px; }
+</style></head><body>
+<form id="form">
+  Way <input id="way" size="12" placeholder="223115682">
+  <select id="activity">
+    <option>all</option><option>run</option><option>ride</option><option>sport_Hike</option>
+    <option>sport_MountainBikeRide</option><option>winter</option><option>water</option>
+  </select>
+  <label title="Experiment: the first and last points may move even when they are junctions"><input type="checkbox" id="moveEnds"> Move ends</label>
+  <button>Slide</button>
+  <span class="legend"><span style="color:#ff3cf0">original</span><span style="color:#7dff3a">result</span><span style="color:#ffffff">fixed</span><span style="color:#3d8bff">other ways (dashed)</span><span style="color:#ffdc00">moved junction</span></span>
+  <span id="status"></span>
+</form>
+<div id="map"></div>
+<div id="loading"><div id="loadingText"></div></div>
+<aside id="list"><button id="add" disabled>+ Add current way</button><div id="filters"></div><div id="items"></div></aside>
+<script>
+const map = L.map('map', { maxZoom: 20 }).setView([36.757, -4.395], 16);
+const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19, className: 'base', attribution: 'Esri World Imagery' });
+L.control.layers({ None: L.layerGroup().addTo(map), Satellite: satellite }).addTo(map);
+const API = 'http://localhost:8765';
+// Colorize the grayscale tiles with Strava's orange ramp, like the extension
+// does in iD (src/clients/www.openstreetmap.org/colors.js).
+fetch(API + '/palettes.json').then((r) => r.json()).then((palettes) => {
+  const bytes = palettes.orange.match(/../g).map((hex) => parseInt(hex, 16) / 255);
+  const table = (offset) => bytes.filter((_, i) => i % 4 === offset).map((v) => +v.toFixed(4)).join(' ');
+  document.body.insertAdjacentHTML('beforeend',
+    '<svg width="0" height="0" style="position:absolute"><filter id="heat-orange" color-interpolation-filters="sRGB">' +
+    '<feColorMatrix type="matrix" values="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0"/><feComponentTransfer>' +
+    ['R', 'G', 'B', 'A'].map((c, i) => '<feFunc' + c + ' type="table" tableValues="' + table(i) + '"/>').join('') +
+    '</feComponentTransfer></filter></svg>');
+});
+let heat, layers = L.layerGroup().addTo(map), area = L.layerGroup().addTo(map);
+const $ = (id) => document.getElementById(id);
+const tileURL = (activity, z, x, y) => 'https://content-a.strava.com/identified/globalheat/' + activity + '/grayscale/' + z + '/' + x + '/' + y + '.png?v=20&missing=empty';
+const ll = (loc) => [loc[1], loc[0]];
+function showHeat() {
+  if (heat) heat.remove();
+  heat = L.tileLayer(tileURL($('activity').value, '{z}', '{x}', '{y}'), { maxZoom: 20, maxNativeZoom: 15, className: 'heat', tileSize: 512, zoomOffset: -1 }).addTo(map);
+  heat.bringToBack();
+}
+// Keep the way, activity and map view in the URL, so a refresh reopens it.
+function saveURL() {
+  const c = map.getCenter();
+  history.replaceState(null, '', '?way=' + $('way').value.trim() + '&activity=' + $('activity').value + ($('moveEnds').checked ? '&moveEnds=1' : '') +
+    '#' + map.getZoom() + '/' + c.lat.toFixed(5) + '/' + c.lng.toFixed(5));
+}
+// Roads and paths in view, from the OSM API: click one to slide it. Loaded
+// once per zoom-16 tile, like iD, so panning and zooming reuse what is loaded.
+const loadedTiles = new Set(), drawnWays = new Set();
+async function loadArea() {
+  saveURL();
+  if (map.getZoom() < 15) return;
+  const b = map.getBounds(), n = 2 ** 16;
+  const tx = (lng) => Math.floor(((lng + 180) / 360) * n);
+  const ty = (lat) => Math.floor(((1 - Math.asinh(Math.tan((lat * Math.PI) / 180)) / Math.PI) / 2) * n);
+  const lng = (x) => (x / n) * 360 - 180;
+  const lat = (y) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n))) * 180) / Math.PI;
+  const tiles = [];
+  for (let x = tx(b.getWest()); x <= tx(b.getEast()); x++)
+    for (let y = ty(b.getNorth()); y <= ty(b.getSouth()); y++)
+      if (!loadedTiles.has(x + '/' + y)) { loadedTiles.add(x + '/' + y); tiles.push([x, y]); }
+  await Promise.all(tiles.map(async ([x, y]) => {
+    const response = await fetch(API + '/area.json?bbox=' + [lng(x), lat(y + 1), lng(x + 1), lat(y)].map((v) => v.toFixed(6)).join(','));
+    if (!response.ok) { loadedTiles.delete(x + '/' + y); return; }
+    drawWays(await response.json());
+  }));
+}
+function drawWays(ways) {
+  for (const o of ways) {
+    if (drawnWays.has(o.id)) continue;
+    drawnWays.add(o.id);
+    const shown = L.polyline(o.locs.map(ll), { color: '#3d8bff', weight: 1, opacity: 0.45, dashArray: '4 4' }).addTo(area);
+    // Wide invisible twin, easier to hover and click.
+    L.polyline(o.locs.map(ll), { opacity: 0, weight: 12 })
+      .bindTooltip(o.label + ' · ' + o.id, { sticky: true })
+      .on('mouseover', () => shown.setStyle({ weight: 3, opacity: 0.9 }))
+      .on('mouseout', () => shown.setStyle({ weight: 1, opacity: 0.45 }))
+      .on('click', () => { $('way').value = o.id; run().catch(fail); })
+      .addTo(area);
+  }
+}
+const fail = (err) => $('status').textContent = err.message;
+// Ways worked on, with problem tags: kept in localStorage, and written to
+// slide-lab-ways.js by the server, so they can be re-run from the command line.
+const TAGS = ['jump', 'parallel', 'junction', 'switchback', 'faint', 'end', 'wobbly', 'fixed', 'ok'];
+const GOOD = ['fixed', 'ok'];
+let ways = [], filter = null;
+try { ways = JSON.parse(localStorage.getItem('slideLab.ways')) || []; } catch {}
+// Ways from the file that this browser does not know yet.
+for (const w of window.SLIDE_LAB_WAYS || []) if (!ways.some((v) => v.id === w.id)) ways.push(w);
+function saveWays() {
+  try { localStorage.setItem('slideLab.ways', JSON.stringify(ways)); } catch {}
+  fetch(API + '/ways', { method: 'PUT', body: JSON.stringify(ways) }).catch(() => {});
+  renderList();
+}
+// The way last slid, which "+ Add current way" adds to the list.
+let current = null;
+$('add').onclick = () => {
+  if (!current || ways.some((w) => w.id === current.id)) return;
+  ways = [{ ...current, tags: [] }, ...ways];
+  saveWays();
+};
+const chip = (tag, on, onclick) => {
+  const b = document.createElement('button');
+  b.className = 'chip' + (on ? ' on' : '') + (GOOD.includes(tag) ? '' : ' bad');
+  b.textContent = tag;
+  b.onclick = onclick;
+  return b;
+};
+function renderList() {
+  $('add').disabled = !current || ways.some((w) => w.id === current.id);
+  const used = [...new Set([...TAGS, ...ways.flatMap((w) => w.tags)])];
+  $('filters').replaceChildren(...used.map((tag) => chip(tag + ' ' + ways.filter((w) => w.tags.includes(tag)).length, filter === tag, () => { filter = filter === tag ? null : tag; renderList(); })));
+  $('items').replaceChildren(...ways.filter((w) => !filter || w.tags.includes(filter)).map((w) => {
+    const item = document.createElement('div');
+    item.className = 'item' + (w.id === $('way').value.trim() ? ' current' : '');
+    item.innerHTML = '<div class="head"><b></b><span></span><button title="Forget">×</button></div><div class="chips"></div>';
+    item.querySelector('b').textContent = w.id;
+    item.querySelector('span').textContent = w.name || '';
+    item.querySelector('.head').onclick = (e) => {
+      if (e.target.tagName === 'BUTTON') { ways = ways.filter((v) => v !== w); saveWays(); return; }
+      $('way').value = w.id; run().catch(fail);
+    };
+    const toggle = (tag) => { w.tags = w.tags.includes(tag) ? w.tags.filter((t) => t !== tag) : [...w.tags, tag]; saveWays(); };
+    const chips = item.querySelector('.chips');
+    for (const tag of [...new Set([...TAGS, ...w.tags])]) chips.append(chip(tag, w.tags.includes(tag), () => toggle(tag)));
+    chips.append(chip('+', false, () => { const tag = prompt('New tag')?.trim(); if (tag && !w.tags.includes(tag)) toggle(tag); }));
+    return item;
+  }));
+}
+renderList();
+function loading(text) {
+  $('loading').classList.toggle('on', Boolean(text));
+  $('loadingText').textContent = text || '';
+  if (text) $('status').textContent = text;
+}
+async function run() {
+  const way = $('way').value.trim();
+  if (!way) return;
+  saveURL();
+  renderList();
+  loading('Sliding way ' + way + '…');
+  try {
+    await slide(way, $('activity').value);
+  } finally {
+    loading(null);
+  }
+}
+async function slide(way, activity) {
+  layers.clearLayers();
+  let data;
+  // The server lists the Strava tiles it lacks: fetch them here, where the
+  // extension adds the Strava cookies, upload them, and try again.
+  for (let round = 0; round < 4; round++) {
+    data = await (await fetch(API + '/slide/' + way + '.json?activity=' + activity + ($('moveEnds').checked ? '&moveEnds=1' : ''))).json();
+    if (!data.missing) break;
+    loading('Downloading ' + data.missing.length + ' heatmap tiles…');
+    await Promise.all(data.missing.map(async (t) => {
+      const response = await fetch(tileURL(t.activity, t.z, t.x, t.y));
+      if (!response.ok && response.status !== 404 && response.status !== 410)
+        throw new Error('Strava tile HTTP ' + response.status + ': is the extension logged in?');
+      await fetch(API + '/tile/' + t.activity + '/' + t.z + '/' + t.x + '/' + t.y + '.png', {
+        method: 'POST', body: response.ok ? await response.blob() : '',
+      });
+    }));
+    loading('Sliding way ' + way + '…');
+  }
+  if (data.error) { $('status').textContent = data.error; return; }
+  const original = L.polyline(data.original.map(ll), { color: '#ff3cf0', weight: 2, interactive: false }).addTo(layers);
+  data.original.forEach((loc) => L.circleMarker(ll(loc), { radius: 3, color: '#ff3cf0', weight: 1 }).addTo(layers));
+  L.polyline(data.result.map((p) => ll(p.loc)), { color: '#7dff3a', weight: 2, interactive: false }).addTo(layers);
+  data.result.forEach((p) => L.circleMarker(ll(p.loc), { radius: 3, color: '#7dff3a', weight: 1 }).addTo(layers));
+  data.fixed.forEach((i) => L.circleMarker(ll(data.original[i]), { radius: 5, color: '#ffffff', weight: 2, fill: false }).addTo(layers));
+  // Junction ends that moved ("Move ends"): the connected ways would bend with them.
+  for (const { from, to } of data.movedJunctions) {
+    L.polyline([ll(from), ll(to)], { color: '#ffdc00', weight: 2, dashArray: '3 3', interactive: false }).addTo(layers);
+    L.circleMarker(ll(to), { radius: 6, color: '#ffdc00', weight: 2, fill: false }).bindTooltip('Junction moved: connected ways bend with it').addTo(layers);
+  }
+  map.fitBounds(original.getBounds(), { padding: [40, 40] });
+  current = { id: way, name: data.tags.name || data.tags.highway || '' };
+  renderList();
+  const s = data.stats;
+  $('status').innerHTML = (data.tags.name || data.tags.highway || '') + ': ' + s.pointsBefore + ' → ' + s.pointsAfter + ' points, ' + s.fixed + ' fixed, ' + s.skipped + ' skipped, ' + s.alongOther + ' along other, ' + s.ms + ' ms · <a style="color:#8cf" href="' + API + '/slide/' + way + '.png?activity=' + activity + '" target="_blank">PNG</a> · <a style="color:#8cf" target="_blank" href="https://www.openstreetmap.org/edit?way=' + way + '">iD</a>';
+}
+$('form').onsubmit = (e) => { e.preventDefault(); run().catch(fail); };
+$('activity').onchange = showHeat;
+const params = new URLSearchParams(location.search);
+const view = location.hash.slice(1).split('/').map(Number);
+$('way').value = params.get('way') || '';
+$('activity').value = params.get('activity') || 'all';
+$('moveEnds').checked = params.get('moveEnds') === '1';
+$('moveEnds').onchange = () => run().catch(fail);
+if (view.length === 3 && view.every(Number.isFinite)) map.setView([view[1], view[2]], view[0]);
+showHeat();
+map.on('moveend', () => loadArea().catch(fail));
+loadArea().catch(fail);
+if ($('way').value) run().catch(fail);
+</script></body></html>

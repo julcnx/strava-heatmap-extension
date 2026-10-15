@@ -10,8 +10,8 @@
  * The contract with algorithm.js is the result record:
  *   { loc: [lon, lat], nodeIndex }
  * nodeIndex identifies the original vertex the point came from; null means
- * "a point Slide created". slideLine() returns every original vertex in
- * order. This module decides which OSM nodes are moved, which are created,
+ * "a point Slide created". slideLine() returns original vertices in order,
+ * dropping free ones on straight stretches. This module decides which OSM nodes are moved, which are created,
  * and which redundant ones are deleted.
  *
  * Everything needed for the edit (including the new node IDs) is computed up
@@ -64,42 +64,23 @@ export function getSlideSelection(graph, ids) {
   return { way, start, end, nodes };
 }
 
-// Indices (within the selection) of vertices that must never move or be
-// deleted: anything carrying tags, used by more than one way (junctions), or
-// referenced by a relation. Slide treats them as fixed anchors. The range
-// endpoints are protected as well, but separately, because they are special
-// even when untagged: they keep the way connected to the rest of the map.
-// Indices (within the selection) of vertices that must not MOVE: tagged nodes
-// (a ford, gate or crossing marks a specific spot) and relation members keep
-// their position, and so do the range boundaries of a partial selection, which
-// also belong to the unselected rest of the way. Untagged junctions and free
-// way ends may move (within the normal snap radius): moving a junction moves
-// the connected ways with it, like dragging it in iD.
-// Bridges and tunnels are mapped to the structure, not to the heat, and on a
-// short way moving one end by a few metres is a large distortion.
+// Bridges and tunnels are mapped to the structure, not to the heat.
 export function isStructure(way) {
   return ['bridge', 'tunnel'].some((key) => way.tags[key] && way.tags[key] !== 'no');
 }
-const SHORT_WAY_METERS = 40;
-function wayLength(graph, way) {
-  const locs = graph.childNodes(way).map((node) => node.loc);
-  return locs.slice(1).reduce((sum, loc, i) => sum + distanceMeters(locs[i], loc), 0);
-}
 
+// Indices (within the selection) of vertices that must not MOVE: tagged nodes
+// (a ford, gate or crossing marks a specific spot), relation members,
+// junctions (they are mapped where the ways meet, and moving one bends every
+// connected way), and the range boundaries of a partial selection, which also
+// belong to the unselected rest of the way. index.js also keeps the line's
+// free ends in place.
 export function fixedIndices(graph, selection) {
   const last = selection.nodes.length - 1;
-  const anchorsStructure = (node) =>
-    graph
-      .parentWays(node)
-      .some(
-        (way) =>
-          way.id !== selection.way.id &&
-          (isStructure(way) || wayLength(graph, way) < SHORT_WAY_METERS)
-      );
   return selection.nodes.flatMap((node, i) =>
     Object.keys(node.tags).length ||
+    graph.parentWays(node).length > 1 ||
     graph.parentRelations(node).length ||
-    anchorsStructure(node) ||
     (i === 0 && selection.start > 0) ||
     (i === last && selection.end < selection.way.nodes.length - 1)
       ? [i]
@@ -117,17 +98,21 @@ export function protectedIndices(graph, selection) {
   );
 }
 
-// Vertices closer together than this are redundant: under two zoom-15 pixels
-// (~2.4 m each), so the heatmap cannot tell them apart. Slide-created nodes are
+// Vertices closer together than this are redundant (near-duplicates); the
+// points of a smoothed turn (see smoothLine in algorithm.js) are spaced more
+// widely. Slide-created nodes are
 // removed first; existing OSM nodes are removed only when untagged, unused by
 // any other way and not relation members — see cleanSlideResult() for the
 // full rules. Only vertices within ALONG_LINE_METERS along the line are
 // compared, so the two legs of a tight hairpin are never merged.
-const CLOSE_METERS = 4;
+const CLOSE_METERS = 1.5;
 const ALONG_LINE_METERS = 2 * CLOSE_METERS;
 // Next to a junction, a slid vertex this close to the other way is still on
 // that way's trail: a trail leaving a junction diverges from the other way.
-const OVERLAP_METERS = 2 * CLOSE_METERS;
+const OVERLAP_METERS = 8;
+// Trails only share heat for a short distance from a junction. A slid line
+// staying that close to the other way for longer runs along it, on its trail.
+const MAX_OVERLAP_METERS = 30;
 // A single vertex where the line turns back by more than this is a spike (a
 // vertex snapped onto a neighbouring trail): a real switchback traced by Slide
 // has a rounded apex made of several gentler vertices.
@@ -169,12 +154,6 @@ function toMeters(loc, origin) {
     (loc[1] - origin[1]) * 110574,
   ];
 }
-function fromMeters(point, origin) {
-  return [
-    origin[0] + point[0] / (Math.cos((origin[1] * Math.PI) / 180) * 111319.49),
-    origin[1] + point[1] / 110574,
-  ];
-}
 function nearestOnSegment(p, a, b) {
   const dx = b[0] - a[0],
     dy = b[1] - a[1],
@@ -188,19 +167,25 @@ function nearestOnSegment(p, a, b) {
 // Near a junction both trails share heat, so the slid line may run along the
 // other way before reaching the junction, leaving the two ways on top of each
 // other. From each junction, drop the slid vertices lying within OVERLAP_METERS
-// of the other way, and — when the junction may move — slide the junction
-// along the other way's own segment to where the slid line leaves it, so the
-// other way keeps its shape.
+// of the other way (junctions themselves never move, see fixedIndices). When
+// the overlap runs further than MAX_OVERLAP_METERS, the line followed the
+// other way's trail instead of its own: that stretch is left as drawn rather
+// than trimmed, which would otherwise reduce the line to a straight chord. The
+// returned points count those stretches in `alongOther`. A vertex that stayed
+// where it was drawn (left as drawn, or already on its trail) is the mapper's
+// own and ends the overlap: it is never dropped.
 function trimJunctionOverlaps(before, selection, result) {
   const protectedIndexes = new Set([
     0,
     selection.nodes.length - 1,
     ...protectedIndices(before, selection),
   ]);
-  const fixed = new Set(fixedIndices(before, selection));
   const removable = (point) =>
-    point.nodeIndex === null || !protectedIndexes.has(point.nodeIndex);
+    point.nodeIndex === null ||
+    (!protectedIndexes.has(point.nodeIndex) &&
+      distanceMeters(point.loc, selection.nodes[point.nodeIndex].loc) >= CLOSE_METERS);
   let points = result.map((point) => ({ ...point, loc: point.loc.slice() }));
+  let alongOther = 0;
   for (let index = 0; index < selection.nodes.length; index++) {
     const node = selection.nodes[index];
     for (const other of before.parentWays(node)) {
@@ -228,33 +213,20 @@ function trimJunctionOverlaps(before, selection, result) {
           k += step;
         const overlap = Math.abs(k - r) - 1;
         if (overlap <= 0) continue;
-        const last = points[k - step];
-        // A loop's closing node appears at both ends: sliding one copy along
-        // the other way would split it, so it is only trimmed around.
-        const closing =
-          selection.nodes[0].id === selection.nodes[selection.nodes.length - 1].id &&
-          (index === 0 || index === selection.nodes.length - 1);
-        if (!fixed.has(index) && !closing) {
-          // Slide the junction along its own segments of the other way, up
-          // to 1 m short of the neighbouring node, to where the line leaves.
-          const p = toMeters(last.loc, origin);
-          let best;
-          other.nodes.forEach((id, n) => {
-            if (id !== node.id) return;
-            for (const m of [n - 1, n + 1]) {
-              const neighbour = before.hasEntity(other.nodes[m]);
-              if (!neighbour) continue;
-              const b = toMeters(neighbour.loc, origin);
-              const length = Math.hypot(b[0], b[1]);
-              if (length < 2) continue;
-              const { t, point } = nearestOnSegment(p, [0, 0], b);
-              const capped = Math.min(t, 1 - 1 / length);
-              const candidate = [b[0] * capped, b[1] * capped];
-              const d = Math.hypot(p[0] - point[0], p[1] - point[1]);
-              if (!best || d < best.d) best = { d, loc: fromMeters(candidate, origin) };
-            }
-          });
-          if (best) points[r].loc = best.loc;
+        let length = 0;
+        for (let m = r; m !== k - step; m += step)
+          length += distanceMeters(points[m].loc, points[m + step].loc);
+        if (length > MAX_OVERLAP_METERS) {
+          alongOther++;
+          for (let m = r + step; m !== k; m += step) {
+            if (points[m].nodeIndex !== null)
+              points[m].loc = selection.nodes[points[m].nodeIndex].loc.slice();
+          }
+          points = points.filter(
+            (point, i) =>
+              point.nodeIndex !== null || i <= Math.min(r, k) || i >= Math.max(r, k)
+          );
+          continue;
         }
         const from = Math.min(r + step, k - step),
           to = Math.max(r + step, k - step);
@@ -262,6 +234,7 @@ function trimJunctionOverlaps(before, selection, result) {
       }
     }
   }
+  points.alongOther = alongOther;
   return points;
 }
 
@@ -326,7 +299,9 @@ export function cleanSlideResult(before, selection, input) {
     if (spike === -1) break;
     kept.splice(spike, 1);
   }
-  return kept.map((index) => result[index]);
+  const cleaned = kept.map((index) => result[index]);
+  cleaned.alongOther = result.alongOther;
+  return cleaned;
 }
 
 // Fingerprint of everything else that uses a node: the sorted IDs of its

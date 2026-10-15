@@ -53,6 +53,16 @@ const EARTH_CIRCUMFERENCE = 40075016.68557849;
 //   avoidMeters            – a section is penalised for running this close to
 //                             the path traced by earlier sections (same value
 //                             as the duplicate-vertex merge in action.js)
+//   otherWayMeters         – heat this close to another mapped road or path
+//                             is ignored, fading back in by otherWayFadeMeters
+//   otherWayFlankMeters    – further out, up to this distance, heat that keeps
+//                             fading away from the other way is ignored too
+//   junctionMeters         – except this close to a junction with the line
+//   alignMeters            – a vertex already on a trail moves at most this
+//                             far, across the line, to centre on it
+//   jumpMeters             – a traced section straying sideways from its
+//                             drawn segment further than this beyond its
+//                             anchors jumped to another trace
 export const SLIDE_DEFAULTS = Object.freeze({
   searchRadiusMeters: 24,
   maxSearchRadiusMeters: 80,
@@ -63,6 +73,12 @@ export const SLIDE_DEFAULTS = Object.freeze({
   minTriangleSquareMeters: 10,
   avoidMeters: 4,
   approachFactor: 3,
+  otherWayMeters: 5,
+  otherWayFadeMeters: 8,
+  otherWayFlankMeters: 20,
+  junctionMeters: 8,
+  jumpMeters: 8,
+  alignMeters: 6,
 });
 
 // Project [longitude, latitude] into Web-Mercator pixel coordinates at the
@@ -372,6 +388,132 @@ function searchRadii(initial, maximum) {
   return radii;
 }
 
+// Heat on other mapped roads and paths belongs to them. A stronger parallel
+// trail would otherwise pull the line onto it, and its brightness would make
+// the line's own trail look faint after contrast normalisation. Fade their
+// heat out within otherWayMeters (back to full at otherWayFadeMeters), except
+// within junctionMeters of a junction with the line, where both trails share
+// heat. `otherWays` are arrays of [lon, lat]; a junction is a line vertex at
+// exactly the location of one of their vertices.
+//
+// A wide road's heat band reaches past otherWayFadeMeters, and the line would
+// jump across a dark gap onto its bright edge. So up to otherWayFlankMeters,
+// a pixel is also ignored when, on the straight walk from the other way to it,
+// the heat leaves the other way's core (about level from where the walk
+// starts, at otherWayMeters) and then keeps falling, metre after metre: it is
+// the other way's flank. A pixel still in that core belongs to it too, unless
+// the other way has no heat there.
+// Heat that stops falling before going dark (a plateau, or a rise beyond a
+// gap) belongs to something else, so a separate trail next to the road keeps
+// its heat. Not within otherWayFlankMeters of a junction with the line: there
+// the walk can run along the line's own trail, whose heat stays level too.
+// The flank must keep falling, to this factor of its previous value per metre
+// (unless it is dark); its core ends below this factor of its peak.
+const FLANK_DROP = 0.97;
+const NEAR_METERS = 10;
+const FLANK_CORE = 0.85;
+const FLANK_DARK = 0.02;
+function maskOtherWays(raster, otherWays, locations, scale) {
+  const { width, height } = raster;
+  const inner = SLIDE_DEFAULTS.otherWayMeters / scale,
+    outer = SLIDE_DEFAULTS.otherWayFadeMeters / scale,
+    flank = SLIDE_DEFAULTS.otherWayFlankMeters / scale,
+    junctionRadius = SLIDE_DEFAULTS.junctionMeters / scale;
+  const metre = 1 / scale;
+  const onFlank = (from, to) => {
+    const length = Math.hypot(to[0] - from[0], to[1] - from[1]);
+    const at = (d) =>
+      sampleDensity(raster, [
+        from[0] + ((to[0] - from[0]) * d) / length,
+        from[1] + ((to[1] - from[1]) * d) / length,
+      ]);
+    const start = at(inner);
+    if (start <= FLANK_DARK) return false;
+    let previous = start,
+      falling = false;
+    for (let d = inner + metre; d < length + metre; d += metre) {
+      const value = at(Math.min(d, length));
+      if (!falling) {
+        // Rising well above the start: another trail's band, not this core.
+        if (value > start / FLANK_CORE) return false;
+        falling = value < start * FLANK_CORE;
+      } else if (value > FLANK_DARK && value > previous * FLANK_DROP) return false;
+      previous = value;
+    }
+    return true;
+  };
+  const junctions = locations
+    .filter((loc) =>
+      otherWays.some((way) => way.some((o) => o[0] === loc[0] && o[1] === loc[1]))
+    )
+    .map((loc) => project(loc, raster.zoom));
+  const weight = new Float32Array(width * height).fill(1);
+  // Pixels within NEAR_METERS of another way (1), or further out within
+  // otherWayFlankMeters (2), junctions included: the heat there may be that
+  // way's. A vertex never moves into the first, and in either it only centres
+  // on the trail it is on, never searches for one (see snap).
+  const near = new Uint8Array(width * height);
+  for (const way of otherWays) {
+    const points = way.map((loc) => project(loc, raster.zoom));
+    for (let k = 1; k < points.length; k++) {
+      const a = points[k - 1],
+        b = points[k];
+      const minX = Math.max(0, Math.floor(Math.min(a[0], b[0]) - flank) - raster.x),
+        maxX = Math.min(width - 1, Math.ceil(Math.max(a[0], b[0]) + flank) - raster.x),
+        minY = Math.max(0, Math.floor(Math.min(a[1], b[1]) - flank) - raster.y),
+        maxY = Math.min(height - 1, Math.ceil(Math.max(a[1], b[1]) + flank) - raster.y);
+      const dx = b[0] - a[0],
+        dy = b[1] - a[1],
+        length = dx * dx + dy * dy;
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          const index = y * width + x;
+          if (weight[index] === 0) continue;
+          const p = [x + raster.x, y + raster.y];
+          const t = length
+            ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length))
+            : 0;
+          const nearest = [a[0] + dx * t, a[1] + dy * t];
+          const d = Math.hypot(p[0] - nearest[0], p[1] - nearest[1]);
+          if (d > flank) continue;
+          if (d < NEAR_METERS / scale) near[index] = 1;
+          else if (!near[index]) near[index] = 2;
+          let w = Math.max(0, Math.min(1, (d - inner) / (outer - inner)));
+          if (
+            w > 0 &&
+            d > inner &&
+            !junctions.some((j) => Math.hypot(p[0] - j[0], p[1] - j[1]) <= flank) &&
+            onFlank(nearest, p)
+          )
+            w = 0;
+          if (w < weight[index]) weight[index] = w;
+        }
+      }
+    }
+  }
+  for (const [jx, jy] of junctions) {
+    for (
+      let y = Math.max(0, Math.floor(jy - junctionRadius) - raster.y);
+      y <= Math.min(height - 1, Math.ceil(jy + junctionRadius) - raster.y);
+      y++
+    ) {
+      for (
+        let x = Math.max(0, Math.floor(jx - junctionRadius) - raster.x);
+        x <= Math.min(width - 1, Math.ceil(jx + junctionRadius) - raster.x);
+        x++
+      ) {
+        if (Math.hypot(x + raster.x - jx, y + raster.y - jy) <= junctionRadius)
+          weight[y * width + x] = 1;
+      }
+    }
+  }
+  return {
+    ...raster,
+    density: raster.density.map((value, i) => value * weight[i]),
+    near,
+  };
+}
+
 // Build the "tracking surface": a copy of the raster whose density is locally
 // contrast-normalised (0..1 relative to the strongest heat nearby).
 //
@@ -444,9 +586,92 @@ async function trackingSurface(raster, scale, options) {
 // filtered by the signal threshold BEFORE the distance penalty is applied —
 // otherwise a dark unsnapped pixel could outscore a weak visible trail and
 // then fail the threshold afterwards.
-function snap(raster, point, radius) {
+//
+// A vertex already on a trail, even a faint one, only moves across the line
+// (along `normal`, perpendicular to the drawn line there) to the nearest ridge
+// uphill: it never crosses a darker gap onto a brighter trail nearby, and at
+// a fork it does not follow the merged heat up the brighter branch. It only
+// centres on that trail: at most alignMeters (`align` pixels) away. A climb
+// ending on weak heat (a false ridge, e.g. at the edge of a masked road) falls
+// back to the search below. It does not climb into another mapped way's zone
+// (raster.near, from maskOtherWays) unless it starts there: next to a
+// junction, that way's heat is not masked and would pull the vertex onto it.
+// A vertex already in the trail's core (at least
+// IN_CORE of the ridge's heat) does not move at all: where the band is wider
+// than the drawn detail (tight switchbacks), the heat cannot show that detail,
+// and centring would flatten it.
+const ON_TRAIL = 0.1;
+const IN_CORE = 0.4;
+// A drawn vertex turning by more than this, with a leg shorter than
+// HOLD_LEG_METERS, is a bend of the drawing (e.g. a tight switchback) that the
+// heat is too coarse to show: it holds its place when on the band (see snap).
+// A bend with long legs is a turn the band itself shows: it is centred. Only
+// zigzags are held: a bend needs a bend turning the other way within two
+// vertices. A lone bend, or a bump turning one way, is drawing noise.
+const HOLD_TURN_DEGREES = 35;
+const HOLD_LEG_METERS = 12;
+// ... and only while it swings at most this far from the band's ridge: a
+// wider zigzag would show in the heat.
+const HOLD_MAX_OFFSET_METERS = 3;
+function snap(raster, point, radius, normal, align = radius, hold = 0) {
+  const zone = (p) => {
+    if (!raster.near) return 0;
+    const x = Math.round(p[0]) - raster.x,
+      y = Math.round(p[1]) - raster.y;
+    return x >= 0 && y >= 0 && x < raster.width && y < raster.height
+      ? raster.near[y * raster.width + x]
+      : 0;
+  };
+  const near = (p) => zone(p) === 1;
+  const startsNear = near(point);
+  if (normal && sampleDensity(raster, point) >= ON_TRAIL) {
+    const start = sampleDensity(raster, point);
+    let peak = start;
+    const climb = (sign) => {
+      let distance = 0,
+        value = start;
+      for (;;) {
+        const next = distance + 0.5;
+        const p = [point[0] + sign * normal[0] * next, point[1] + sign * normal[1] * next];
+        const sample = sampleDensity(raster, p);
+        if (sample <= value || next > Math.min(radius, align) || (!startsNear && near(p)))
+          break;
+        distance = next;
+        value = sample;
+      }
+      peak = Math.max(peak, value);
+      return distance;
+    };
+    const up = [climb(1), -climb(-1)].filter(Boolean);
+    // Both sides uphill (between two ridges): the nearer one.
+    const offset = up.length ? up.sort((a, b) => Math.abs(a) - Math.abs(b))[0] : 0;
+    // A held bend stays when on the band and within `hold` pixels of its ridge.
+    if (hold && Math.abs(offset) <= hold && start >= peak * IN_CORE && start >= 0.25)
+      return point.slice();
+    const centred = [point[0] + normal[0] * offset, point[1] + normal[1] * offset];
+    if (sampleDensity(raster, centred) >= 0.25) return centred;
+  }
+  // Off the trail next to another way: whatever heat a search finds there
+  // may be that way's, so the vertex stays as drawn.
+  if (zone(point)) return undefined;
   let best,
     bestScore = -Infinity;
+  if (normal) {
+    // Off the trail: search across the line too, never along it, so the
+    // vertex does not jump past its neighbours.
+    for (let d = -radius; d <= radius; d += 0.5) {
+      const p = [point[0] + normal[0] * d, point[1] + normal[1] * d];
+      if (!isCovered(raster, p)) continue;
+      const value = sampleDensity(raster, p);
+      if (value < 0.25 || (!startsNear && near(p))) continue;
+      const score = value - 0.12 * (d / radius) ** 2;
+      if (score > bestScore) {
+        bestScore = score;
+        best = p;
+      }
+    }
+    return best;
+  }
   for (let y = Math.floor(point[1] - radius); y <= Math.ceil(point[1] + radius); y++) {
     for (let x = Math.floor(point[0] - radius); x <= Math.ceil(point[0] + radius); x++) {
       const distance = Math.hypot(x - point[0], y - point[1]);
@@ -462,7 +687,7 @@ function snap(raster, point, radius) {
         continue;
       // Filter candidates BEFORE applying the distance penalty. Otherwise a
       // dark unsnapped point can beat a visible weak trail and fail afterwards.
-      if (raster.density[index] < 0.25) continue;
+      if (raster.density[index] < 0.25 || (!startsNear && near([x, y]))) continue;
       const score = raster.density[index] - 0.12 * (distance / radius) ** 2;
       if (score > bestScore) {
         bestScore = score;
@@ -632,6 +857,20 @@ async function trace(raster, start, end, originalStart, originalEnd, radius, opt
       longestGap = Math.max(longestGap, gap);
     }
   }
+  // A section follows the trail between its anchors. Straying sideways from
+  // the drawn segment much further than the anchors themselves moved means
+  // it crossed over to another heat trace and back: never allowed.
+  const [dx, dy] = [originalEnd[0] - originalStart[0], originalEnd[1] - originalStart[1]];
+  const sideways = (p) =>
+    Math.hypot(dx, dy)
+      ? Math.abs((p[0] - originalStart[0]) * dy - (p[1] - originalStart[1]) * dx) /
+        Math.hypot(dx, dy)
+      : Math.hypot(p[0] - originalStart[0], p[1] - originalStart[1]);
+  const offset = Math.max(sideways(start), sideways(end));
+  const stray = Math.max(...points.map(sideways));
+  if (stray > offset + SLIDE_DEFAULTS.jumpMeters / options.scale) {
+    throw noSignal('The heatmap trail here jumps to another trace.');
+  }
   const maxGap = 12 / options.scale;
   if (
     first === -1 ||
@@ -682,8 +921,14 @@ function removeSmallTurns(points, minArea) {
 }
 
 function simplify(points, tolerance, raster) {
-  if (points.length <= 2) return points;
+  return points.filter((_, i) => simplifyKeep(points, tolerance, raster)[i]);
+}
+
+// Douglas–Peucker with a density guard: which of `points` to keep (the first
+// and last always are).
+function simplifyKeep(points, tolerance, raster) {
   const keep = new Uint8Array(points.length);
+  if (points.length <= 2) return keep.fill(1);
   keep[0] = keep[points.length - 1] = 1;
   const stack = [[0, points.length - 1]];
   while (stack.length) {
@@ -738,7 +983,7 @@ function simplify(points, tolerance, raster) {
       stack.push([start, farthest], [farthest, end]);
     }
   }
-  return points.filter((_, i) => keep[i]);
+  return keep;
 }
 
 // Slide an entire line.
@@ -749,15 +994,17 @@ function simplify(points, tolerance, raster) {
 //   options   – fixedIndices (indices that must not move: range endpoints are
 //               always fixed, plus tagged nodes and junctions passed in by the
 //               caller), signal (AbortSignal), yield (async hook so long loops
-//               can repaint), onProgress (0..1), plus the metre-based knobs
-//               documented in SLIDE_DEFAULTS.
+//               can repaint), onProgress (0..1), otherWays (nearby mapped
+//               roads and paths as arrays of [lon, lat], whose heat is
+//               ignored), plus the metre-based knobs documented in
+//               SLIDE_DEFAULTS.
 //
 // Returns ordered records { loc, nodeIndex }: nodeIndex identifies the
-// original vertex a point came from, or null for a point Slide created. Every
-// original vertex appears exactly once and in ascending order — action.js
-// relies on that to keep OSM node IDs (and with them tags and connections)
-// where possible, and to drop vertices closer than 1 m (preferring
-// slide-created ones, never protected database nodes).
+// original vertex a point came from, or null for a point Slide created.
+// Original vertices appear at most once and in ascending order; fixed ones and
+// the ends always do, free ones may be dropped where the trail is straight.
+// action.js relies on that to keep OSM node IDs (and with them tags and
+// connections) where possible, and deletes the dropped ones.
 export async function slideLine(locations, raster, options = {}) {
   if (
     locations.length < 2 ||
@@ -812,14 +1059,47 @@ export async function slideLine(locations, raster, options = {}) {
   )
     throw new Error('Invalid Slide search radius.');
   options.scale = scale;
-  // 1) Discovery surface: locally contrast-normalised density.
-  const tracking = await trackingSurface(raster, scale, options);
+  // 1) Discovery surface: locally contrast-normalised density, without the
+  //    heat of other mapped roads and paths.
+  const own = options.otherWays?.length
+    ? maskOtherWays(raster, options.otherWays, locations, scale)
+    : raster;
+  const tracking = await trackingSurface(own, scale, options);
   const originals = locations.map((loc) => project(loc, raster.zoom));
   // Fixed vertices never move. Limited ones (junctions, way ends) may snap,
   // but only within the normal radius; with no trail there they stay fixed.
   const fixed = new Set(options.fixedIndices || []);
   const limited = new Set(options.limitedIndices || []);
   const snapSearches = searchRadii(snapRadius, maxSnapMeters / scale);
+  const align = SLIDE_DEFAULTS.alignMeters / scale;
+  // Bends of the drawing (see HOLD_TURN_DEGREES): +1 or -1 by turn side.
+  const bends = originals.map((p, i) => {
+    if (i === 0 || i === originals.length - 1) return 0;
+    const [a, b] = [originals[i - 1], originals[i + 1]];
+    const u = [p[0] - a[0], p[1] - a[1]],
+      v = [b[0] - p[0], b[1] - p[1]];
+    const length = Math.hypot(...u) * Math.hypot(...v);
+    const sharp =
+      length > 0 &&
+      Math.min(Math.hypot(...u), Math.hypot(...v)) * scale < HOLD_LEG_METERS &&
+      (Math.acos(Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1]) / length))) * 180) /
+        Math.PI >
+        HOLD_TURN_DEGREES;
+    return sharp ? Math.sign(u[0] * v[1] - u[1] * v[0]) : 0;
+  });
+  const holds = bends.map(
+    (side, i) =>
+      side !== 0 &&
+      [i - 2, i - 1, i + 1, i + 2].some((j) => bends[j] && bends[j] === -side)
+  );
+  // Unit normal of the drawn line at each vertex (from its neighbours), the
+  // only direction a vertex already on a trail moves in.
+  const normals = originals.map((p, i) => {
+    const a = originals[Math.max(0, i - 1)],
+      b = originals[Math.min(originals.length - 1, i + 1)];
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    return length ? [-(b[1] - a[1]) / length, (b[0] - a[0]) / length] : null;
+  });
   // 2) Snap every vertex to a trail point ("anchor"). Fixed vertices are their
   //    own anchors, so endpoints and junctions never move. Snapping widens
   //    adaptively before giving up, because the drawn line may be far from the
@@ -833,7 +1113,14 @@ export async function slideLine(locations, raster, options = {}) {
     let anchor = fixed.has(i) ? originals[i] : null;
     for (const r of limited.has(i) ? [snapRadius] : snapSearches) {
       if (anchor) break;
-      anchor = snap(tracking, originals[i], r);
+      anchor = snap(
+        tracking,
+        originals[i],
+        r,
+        normals[i],
+        align,
+        holds[i] ? HOLD_MAX_OFFSET_METERS / scale : 0
+      );
     }
     // The limit is measured from where the vertex was before ANY pass
     // (options.limitedOrigins), so two passes cannot add up past it.
@@ -958,7 +1245,7 @@ export async function slideLine(locations, raster, options = {}) {
   // Join the ridge gradually instead, over approachFactor × its offset.
   const approachLength = (v) => {
     if (!fixed.has(v)) return 0;
-    const center = snap(tracking, originals[v], snapRadius);
+    const center = snap(tracking, originals[v], snapRadius, normals[v], align);
     if (!center) return 0;
     const offset = Math.hypot(center[0] - originals[v][0], center[1] - originals[v][1]);
     return offset > 1 ? SLIDE_DEFAULTS.approachFactor * offset : 0;
@@ -1010,7 +1297,42 @@ export async function slideLine(locations, raster, options = {}) {
     });
   }
   checkAbort(options.signal);
-  return result;
+  // The trail decides the points, not the drawing: simplify the whole slid
+  // line again, so free original vertices on a straight stretch are dropped
+  // (action.js deletes them) while bends keep the points Slide added. Fixed
+  // and unsnapped vertices, and the ends of sections left as drawn, stay.
+  // A held bend of the drawing (a switchback) that stayed in place is kept
+  // as drawn too: the heat cannot show it, so neither simplification nor
+  // smoothing may soften it.
+  const held = (i) =>
+    holds[i] && anchors[i][0] === originals[i][0] && anchors[i][1] === originals[i][1];
+  const keepVertex = (i) =>
+    fixed.has(i) ||
+    unsnapped.has(i) ||
+    held(i) ||
+    !traced[i] ||
+    (i < last && !traced[i + 1]);
+  const pixels = result.map((record) => project(record.loc, raster.zoom));
+  const keep = new Uint8Array(result.length);
+  let from = 0;
+  for (let k = 1; k < result.length; k++) {
+    const i = result[k].nodeIndex;
+    if (k < result.length - 1 && !(i !== null && keepVertex(i))) continue;
+    const span = simplifyKeep(pixels.slice(from, k + 1), tolerance, tracking);
+    span.forEach((flag, j) => (keep[from + j] ||= flag));
+    from = k;
+  }
+  const simplified = result
+    .filter((_, k) => keep[k])
+    // `drawn`: a vertex that stays as drawn (fixed, unsnapped, or ending a
+    // section left as drawn); smoothLine keeps it in place.
+    .map((record) =>
+      record.nodeIndex !== null && keepVertex(record.nodeIndex)
+        ? { ...record, drawn: true }
+        : record
+    );
+  simplified.skipped = result.skipped;
+  return simplified;
 }
 
 // Slide twice: a second pass over the first result (now densely on the trail)
@@ -1041,10 +1363,102 @@ export async function slideLineTwice(locations, raster, options = {}) {
       onProgress: half(0.5),
     }
   );
-  const result = second.map((record) => ({
-    loc: record.loc,
-    nodeIndex: record.nodeIndex === null ? null : first[record.nodeIndex].nodeIndex,
-  }));
+  const result = smoothLine(
+    second.map((record) => ({
+      loc: record.loc,
+      nodeIndex: record.nodeIndex === null ? null : first[record.nodeIndex].nodeIndex,
+      drawn: record.drawn,
+    })),
+    raster
+  ).map(({ loc, nodeIndex }) => ({ loc, nodeIndex }));
   result.skipped = first.skipped;
   return result;
+}
+
+// Smooth the slid line's turns: the heatmap is too coarse to show the curve of
+// a bend, and the traced corners look wrong on the map. Each free stretch
+// (between vertices that stay as drawn, `drawn`, and the ends) is resampled
+// every SMOOTH_STEP_METERS and smoothed by SMOOTH_PASSES rounds of moving
+// each sample halfway to its neighbours' average (about SMOOTH_METERS of
+// rounding), with the stretch's ends pinned. If a sample loses more than half
+// of its heat (it left the trail), the stretch is smoothed half as much, up to
+// three times, else left as traced. The curve is then simplified finely
+// (SMOOTH_TOLERANCE_METERS), so bends get many points and straight parts few;
+// original vertices of the stretch are reused, in order, for the nearest
+// points, so their OSM nodes are kept.
+const SMOOTH_STEP_METERS = 1.5;
+const SMOOTH_PASSES = 24;
+const SMOOTH_TOLERANCE_METERS = 0.4;
+const SMOOTH_MIN_HEAT = 0.5;
+function smoothLine(records, raster) {
+  const zoom = raster.zoom;
+  const scale = metersPerPixel(records[0].loc[1], zoom);
+  const step = SMOOTH_STEP_METERS / scale;
+  const pinned = records.map(
+    (record, k) => k === 0 || k === records.length - 1 || Boolean(record.drawn)
+  );
+  const result = [records[0]];
+  for (let from = 0; from < records.length - 1; ) {
+    let to = from + 1;
+    while (!pinned[to]) to++;
+    const run = records.slice(from, to + 1);
+    result.push(...smoothRun(run, raster, step, scale).slice(1));
+    from = to;
+  }
+  return result;
+}
+
+function smoothRun(run, raster, step, scale) {
+  if (run.length < 3) return run;
+  const zoom = raster.zoom;
+  const points = run.map((record) => project(record.loc, zoom));
+  // Resample along the line; remember where each original point falls.
+  const samples = [points[0]],
+    at = [0];
+  for (let k = 1; k < points.length; k++) {
+    const [a, b] = [points[k - 1], points[k]];
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const n = Math.max(1, Math.round(length / step));
+    for (let s = 1; s <= n; s++)
+      samples.push([a[0] + ((b[0] - a[0]) * s) / n, a[1] + ((b[1] - a[1]) * s) / n]);
+    at.push(samples.length - 1);
+  }
+  const heat = samples.map((p) => sampleDensity(raster, p) * SMOOTH_MIN_HEAT);
+  let smooth = null;
+  for (let passes = SMOOTH_PASSES; passes >= SMOOTH_PASSES / 8 && !smooth; passes /= 2) {
+    let current = samples.map((p) => p.slice());
+    for (let pass = 0; pass < passes; pass++) {
+      const next = current.map((p) => p.slice());
+      for (let i = 1; i < current.length - 1; i++)
+        for (const axis of [0, 1])
+          next[i][axis] =
+            current[i][axis] / 2 + (current[i - 1][axis] + current[i + 1][axis]) / 4;
+      current = next;
+    }
+    if (current.every((p, i) => sampleDensity(raster, p) >= heat[i])) smooth = current;
+  }
+  if (!smooth) return run;
+  const keep = simplifyKeep(smooth, SMOOTH_TOLERANCE_METERS / scale, raster);
+  const kept = smooth.flatMap((p, i) => (keep[i] ? [i] : []));
+  // Reuse the original vertices (their OSM nodes) for the nearest kept points,
+  // in order; the run's two ends keep theirs.
+  const owner = new Map([
+    [0, run[0].nodeIndex],
+    [kept[kept.length - 1], run[run.length - 1].nodeIndex],
+  ]);
+  let next = 1;
+  for (let k = 1; k < run.length - 1; k++) {
+    if (run[k].nodeIndex === null) continue;
+    let best = -1;
+    for (let j = next; j < kept.length - 1; j++)
+      if (best === -1 || Math.abs(kept[j] - at[k]) < Math.abs(kept[best] - at[k])) best = j;
+    if (best === -1) break;
+    if (!owner.has(kept[best])) owner.set(kept[best], run[k].nodeIndex);
+    next = best + 1;
+  }
+  return kept.map((i, j) => ({
+    loc: j === 0 ? run[0].loc : j === kept.length - 1 ? run[run.length - 1].loc : unproject(smooth[i], zoom),
+    nodeIndex: owner.get(i) ?? null,
+    drawn: j === 0 ? run[0].drawn : j === kept.length - 1 ? run[run.length - 1].drawn : undefined,
+  }));
 }

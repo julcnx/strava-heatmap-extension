@@ -66,7 +66,6 @@ class Graph {
 
 // Metres east/north of (0, 0) as [lon, lat].
 const at = (east, north) => [east / 111319.49, north / 110574];
-const metres = (loc) => [loc[0] * 111319.49, loc[1] * 110574];
 let nextId = 0;
 const factory = ({ loc }) => new Node(`new${++nextId}`, loc);
 
@@ -87,21 +86,21 @@ function junctionCase(junctionTags = {}) {
   };
 }
 
-test('fixed vertices: tagged, relation members, partial-range boundaries', () => {
+test('fixed vertices: tagged, relation members, junctions, partial-range boundaries', () => {
   const { graph, selection } = junctionCase();
-  assert.deepEqual(fixedIndices(graph, selection), []); // untagged junction may move
+  assert.deepEqual(fixedIndices(graph, selection), [0]); // untagged junction
 
   const tagged = junctionCase({ ford: 'yes' });
   assert.deepEqual(fixedIndices(tagged.graph, tagged.selection), [0]);
 
   const member = new Graph(graph.entities, { b: [{ id: 'r' }] });
-  assert.deepEqual(fixedIndices(member, selection), [1]);
+  assert.deepEqual(fixedIndices(member, selection), [0, 1]);
 
   const partial = { ...selection, start: 1, nodes: selection.nodes.slice(1) };
   assert.deepEqual(fixedIndices(graph, partial), [0]);
 });
 
-test('junctions with bridges, tunnels and short ways stay fixed', () => {
+test('every junction stays fixed; free line ends may move', () => {
   const nodes = {
     a: new Node('a', at(0, 0)),
     b: new Node('b', at(100, 0)),
@@ -125,34 +124,23 @@ test('junctions with bridges, tunnels and short ways stay fixed', () => {
     end: 3,
     nodes: road.nodes.map((id) => nodes[id]),
   };
-  assert.deepEqual(fixedIndices(graph, selection), [2, 3]);
+  assert.deepEqual(fixedIndices(graph, selection), [1, 2, 3]);
   assert.equal(isStructure(new Way('x', [], { tunnel: 'culvert' })), true);
   assert.equal(isStructure(new Way('x', [], { bridge: 'no' })), false);
 });
 
-test('an untagged junction moves and stays connected to the other way', () => {
-  const { graph, selection } = junctionCase();
+test('moving a junction or a tagged node is refused and nothing is edited', () => {
   const result = [
     { loc: at(2, 3), nodeIndex: 0 },
     { loc: at(55, 30), nodeIndex: 1 },
     { loc: at(110, 33), nodeIndex: 2 },
   ];
-  const after = createSlideAction(graph, selection, result, factory)(graph);
-  assert.deepEqual(after.entity('a').loc, at(2, 3));
-  assert.deepEqual(after.entity('o').nodes, ['o1', 'a', 'o2']);
-});
-
-test('moving a tagged node is refused and nothing is edited', () => {
-  const { graph, selection } = junctionCase({ ford: 'yes' });
-  const result = [
-    { loc: at(2, 3), nodeIndex: 0 },
-    { loc: at(55, 30), nodeIndex: 1 },
-    { loc: at(110, 33), nodeIndex: 2 },
-  ];
-  assert.throws(
-    () => createSlideAction(graph, selection, result, factory),
-    /protected node/
-  );
+  for (const { graph, selection } of [junctionCase(), junctionCase({ ford: 'yes' })]) {
+    assert.throws(
+      () => createSlideAction(graph, selection, result, factory),
+      /protected node/
+    );
+  }
 });
 
 test('vertices closer than 4 m merge; Slide-created ones go first', () => {
@@ -194,16 +182,46 @@ test('running along the other way into a junction is trimmed', () => {
     { loc: at(55, 33), nodeIndex: 1 },
     { loc: at(110, 33), nodeIndex: 2 },
   ];
-  const moving = junctionCase();
-  const moved = cleanSlideResult(moving.graph, moving.selection, result);
-  assert.equal(moved.length, 4);
-  assert.deepEqual(metres(moved[0].loc).map(Math.round), [0, 20]); // slid along the other way
-  assert.deepEqual(cleanSlideResult(moving.graph, moving.selection, moved), moved); // idempotent
-
-  const fixed = junctionCase({ ford: 'yes' });
-  const kept = cleanSlideResult(fixed.graph, fixed.selection, result);
+  const { graph, selection } = junctionCase();
+  const kept = cleanSlideResult(graph, selection, result);
   assert.equal(kept.length, 4);
-  assert.deepEqual(kept[0].loc, at(0, 0));
+  assert.deepEqual(kept[0].loc, at(0, 0)); // the junction stays
+  assert.deepEqual([...cleanSlideResult(graph, selection, kept)], [...kept]); // idempotent
+});
+
+test('a line slid along the way it joins is left as drawn, not trimmed', () => {
+  // Example 4 of #43: a path joined to a track at both ends, slid onto the
+  // track's heat 5 m beside it. Trimming would leave a straight line.
+  const nodes = {
+    a: new Node('a', at(0, 0)),
+    b: new Node('b', at(-30, -100)),
+    c: new Node('c', at(-30, -200)),
+    d: new Node('d', at(0, -300)),
+    t1: new Node('t1', at(0, 50)),
+    t2: new Node('t2', at(0, -350)),
+  };
+  const path = new Way('path', ['a', 'b', 'c', 'd']);
+  const graph = new Graph({
+    ...nodes,
+    path,
+    track: new Way('track', ['t1', 'a', 'd', 't2']),
+  });
+  const selection = getSlideSelection(graph, ['path']);
+  const result = [{ loc: at(0, 0), nodeIndex: 0 }];
+  for (let north = -20; north > -300; north -= 20) {
+    const nodeIndex = north === -100 ? 1 : north === -200 ? 2 : null;
+    result.push({ loc: at(-5, north), nodeIndex });
+  }
+  result.push({ loc: at(0, -300), nodeIndex: 3 });
+  const cleaned = cleanSlideResult(graph, selection, result);
+  assert.equal(cleaned.alongOther, 1);
+  assert.deepEqual(
+    cleaned.map((p) => p.loc),
+    selection.nodes.map((node) => node.loc)
+  );
+  const after = createSlideAction(graph, selection, result, factory)(graph);
+  assert.deepEqual(after.entity('path').nodes, ['a', 'b', 'c', 'd']);
+  assert.ok(after.hasEntity('b') && after.hasEntity('c'));
 });
 
 test('junctions and endpoints are never deleted; untagged duplicates are', () => {

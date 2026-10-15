@@ -5,7 +5,8 @@
   "scripts": {
     "build": "node scripts/build.js",
     "palettes": "node scripts/palettes.js",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "slide-lab": "node scripts/slide-lab.mjs"
   },
   "author": "Julien Etienne <etienne.julien@gmail.com>",
   "license": "MIT",

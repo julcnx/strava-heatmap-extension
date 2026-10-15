@@ -59,7 +59,7 @@ https://github.com/user-attachments/assets/8e15a0e4-30a3-4ea1-860b-60750700e54a
 With a Strava Heatmap overlay switched on and the extension signed in, an existing line can be snapped to the closest trace of that heatmap. Inspired by [Paul Mach's Slide](https://github.com/paulmach/slide/) and [Strava's iD integration](https://github.com/strava/iD).
 
 1. Log into Strava with the extension and enable a Strava heatmap overlay.
-2. Draw a rough **open line** close to the desired trail, or select an existing line.
+2. Draw a rough line close to the desired trail (it can start or end on another road or path), or select an existing line.
 3. Press **Shift + S** (also right after drawing), or right-click the selected line and choose **Slide**.
    To slide only part of a way, select two or more of its points instead.
 4. If several Strava overlays are enabled, choose the activity to follow.
@@ -67,11 +67,20 @@ With a Strava Heatmap overlay switched on and the extension signed in, an existi
 
 What Slide changes:
 
-- Untagged junctions and the ends of the line move onto the trail too (at most 18 m), and connected ways follow them. Tagged nodes (fords, gates, crossings…), relation members, and junctions with bridges, tunnels or short ways stay in place.
-- Where the line meets another road or path, it does not run along it: the junction moves to where the line leaves it.
+- The line's first and last points, junctions with other ways, tagged nodes (fords, gates, crossings…) and relation members stay in place: to move one, disconnect it or move it by hand first.
+- Where the line meets another road or path, it does not run along it. The heat of other mapped roads and paths is ignored, so a stronger parallel trail does not pull the line onto it.
 - Sections with no usable heatmap trail are left as drawn, and the rest is slid. A message tells you how many.
 - Near-duplicate points, tiny kinks and spikes are removed. Only untagged nodes not used by anything else are ever deleted.
 - Bridges and tunnels themselves are not slid.
+
+#### Known issues
+
+Feedback and test cases are collected in [#43](https://github.com/julcnx/strava-heatmap-extension/issues/43). Always review the result before saving.
+
+- **Parallel trails:** the heat within a few metres of other mapped roads and paths is ignored, and a section that would detour onto another heat trace is left as drawn. A point drawn closer to a stronger trail than to its own can still snap onto it. Workaround: Undo and slide only the sections around it (select two points: the selected end points stay in place), then fix that part by hand. Next step: snap to the closest trail rather than the strongest.
+- **Some lines need a second Slide:** a second Shift+S often smooths the remaining kinks. Next step: repeat automatically until the line stops changing.
+- **"Download the OSM data around the line before sliding":** iD shows the whole line as soon as one part of it is downloaded, but Slide needs the OSM data around every point to know what is connected. Workaround: pan along the whole line at zoom 16 or closer. Next step (v0.16.0): download the missing data automatically.
+- **"Slide needs too many tiles":** the box around the line must fit in 16 heatmap tiles (about 4 × 4 km, less at high latitudes), so long or diagonal lines are refused. Workaround: select two points and slide the line in sections. Next step (v0.16.0): split long lines into sections automatically, with one Undo.
 
 The extension's shortcuts are also listed in iD's keyboard shortcuts panel (**?**).
 

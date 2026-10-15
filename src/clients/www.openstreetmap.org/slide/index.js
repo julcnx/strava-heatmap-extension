@@ -14,14 +14,13 @@
  * context.perform(), context.keybinding() and so on. We only use that public
  * surface, so nothing here depends on iD's internals.
  */
-import { createHeatmapRaster, slideLineTwice } from './algorithm.js';
+import { createHeatmapRaster, SLIDE_DEFAULTS, slideLineTwice } from './algorithm.js';
 import {
   cleanSlideResult,
   createSlideAction,
   getSlideSelection,
   fixedIndices,
   isStructure,
-  protectedIndices,
   selectionUnchanged,
 } from './action.js';
 import { loadSlideTiles, slideTileURL } from './tiles.js';
@@ -184,6 +183,32 @@ export async function setupSlide(
         progress = showProgress(context, controller, sources);
         const source = await progress.chooseSource();
         const locations = selection.nodes.map((node) => node.loc);
+        // Other roads and paths near the line: their heat is theirs, so the
+        // line is not pulled onto a stronger parallel trail.
+        const extent = window.iD
+          .geoExtent(
+            [
+              Math.min(...locations.map((loc) => loc[0])),
+              Math.min(...locations.map((loc) => loc[1])),
+            ],
+            [
+              Math.max(...locations.map((loc) => loc[0])),
+              Math.max(...locations.map((loc) => loc[1])),
+            ]
+          )
+          .padByMeters(SLIDE_DEFAULTS.maxSearchRadiusMeters);
+        const others = context
+          .history()
+          .intersects(extent)
+          .filter(
+            (entity) =>
+              entity.type === 'way' &&
+              entity.id !== selection.way.id &&
+              entity.tags.highway
+          )
+          .map((way) =>
+            way.nodes.flatMap((id) => (graph.hasEntity(id) ? [graph.entity(id).loc] : []))
+          );
         // 1. Tiles: downloaded and decoded to ordered heat density (tiles.js /
         //    png.js), buffered by the widest search radius the algorithm uses.
         const loaded = await loadSlideTiles(
@@ -195,17 +220,14 @@ export async function setupSlide(
         progress.update('Following heatmap density…', 0.35);
         // 2. Merge the tiles into one raster and 3. fit the line to it. Fixed
         //    indices (tagged nodes, junctions) are passed along so they stay
-        //    put; endpoints are always fixed inside slideLine() itself.
+        //    put.
         const raster = createHeatmapRaster(loaded.tiles, loaded.zoom, loaded.bounds);
         const result = await slideLineTwice(locations, raster, {
-          fixedIndices: fixedIndices(graph, selection),
-          // Untagged junctions and the range ends may move, but no further
-          // than the normal snap radius.
-          limitedIndices: [
-            0,
-            selection.nodes.length - 1,
-            ...protectedIndices(graph, selection),
+          // The line's first and last points stay where they were drawn too.
+          fixedIndices: [
+            ...new Set([0, selection.nodes.length - 1, ...fixedIndices(graph, selection)]),
           ],
+          otherWays: others,
           signal: controller.signal,
           onProgress: (value) =>
             progress.update('Following heatmap density…', 0.35 + value * 0.65),
@@ -261,16 +283,21 @@ export async function setupSlide(
           throw error;
         }
         context.validator().validate();
-        if (result.skipped) {
-          const sections = result.skipped === 1 ? 'section' : 'sections';
+        if (result.skipped || cleaned.alongOther) {
+          const sections = (count) => `${count} ${count === 1 ? 'section' : 'sections'}`;
+          const messages = [];
+          if (result.skipped)
+            messages.push(
+              `${sections(result.skipped)} without a usable heatmap trail left as drawn.`
+            );
+          if (cleaned.alongOther)
+            messages.push(
+              `${sections(cleaned.alongOther)} following a connected way's trail left as drawn.`
+            );
           context
             .ui()
             .flash.duration(7000)
-            .label(
-              label(
-                `${result.skipped} ${sections} without a usable heatmap trail left as drawn.`
-              )
-            )();
+            .label(label(messages.join(' ')))();
         } else {
           // Brief confirmation, like iD's own operations (behavior/operation.js).
           context

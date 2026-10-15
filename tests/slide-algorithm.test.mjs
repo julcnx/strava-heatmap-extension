@@ -16,9 +16,10 @@ const east = 111319.49 * Math.cos((lat0 * Math.PI) / 180),
 const at = ([e, n]) => [lon0 + e / east, lat0 + n / north];
 const metres = (loc) => [(loc[0] - lon0) * east, (loc[1] - lat0) * north];
 
-// Heatmap tiles of a 5 m wide trail along `centre` (metres), at zoom 15.
-function trailTiles(centre) {
-  const pixels = centre.map((p) => project(at(p), 15));
+// Heatmap tiles of 5 m wide trails at zoom 15. Each trail is a `centre` line
+// (metres) with a `peak` heat (1.3 saturates its core).
+function trailTiles(trails) {
+  const pixels = trails.flatMap(({ centre }) => centre.map((p) => project(at(p), 15)));
   const tiles = [];
   const range = (k) => [
     Math.floor((Math.min(...pixels.map((p) => p[k])) - 80) / 512),
@@ -32,10 +33,15 @@ function trailTiles(centre) {
       const density = new Float32Array(512 * 512);
       for (let y = 0; y < 512; y++) {
         for (let x = 0; x < 512; x++) {
-          let d = Infinity;
-          for (const p of pixels)
-            d = Math.min(d, (p[0] - tx * 512 - x) ** 2 + (p[1] - ty * 512 - y) ** 2);
-          density[y * 512 + x] = Math.min(1, 1.3 * Math.exp(-d / (2 * sigma ** 2)));
+          for (const { centre, peak } of trails) {
+            let d = Infinity;
+            for (const p of centre.map((c) => project(at(c), 15)))
+              d = Math.min(d, (p[0] - tx * 512 - x) ** 2 + (p[1] - ty * 512 - y) ** 2);
+            density[y * 512 + x] = Math.max(
+              density[y * 512 + x],
+              Math.min(1, peak * Math.exp(-d / (2 * sigma ** 2)))
+            );
+          }
         }
       }
       tiles.push({ z: 15, x: tx, y: ty, width: 512, height: 512, density });
@@ -58,7 +64,7 @@ test('a tight bend keeps enough points to follow the trail', async () => {
   for (let s = 0; s <= 150; s += 0.5) centre.push(along(s));
   // A rough line 3 m off the trail, with two points at the bend.
   const rough = [[150, 0], [60, 3], [12, 3], [-6, -2], [-6, -12], along(60), along(140)];
-  const raster = createHeatmapRaster(trailTiles(centre), 15);
+  const raster = createHeatmapRaster(trailTiles([{ centre, peak: 1.3 }]), 15);
   const result = await slideLine(rough.map(at), raster, {
     fixedIndices: [0, rough.length - 1],
     yield: async () => {},
@@ -78,4 +84,168 @@ test('a tight bend keeps enough points to follow the trail', async () => {
   }
   // About one heatmap pixel (1.9 m here); cutting the bend gave 3.8 m.
   assert.ok(worst < 3, `line runs ${worst.toFixed(1)} m off the trail`);
+});
+
+test('a stronger trail along another mapped way does not pull the line', async () => {
+  // A busy road along x = 0, mapped, and a faint path 10 m west of it. The
+  // path is drawn roughly, 4 m off its trail towards the road.
+  const road = [],
+    path = [];
+  for (let y = 0; y >= -200; y -= 2) {
+    road.push([0, y]);
+    path.push([-10, y]);
+  }
+  const raster = createHeatmapRaster(
+    trailTiles([
+      { centre: road, peak: 1.3 },
+      { centre: path, peak: 0.3 },
+    ]),
+    15
+  );
+  const rough = [
+    [-10, 0],
+    [-6, -60],
+    [-6, -140],
+    [-10, -200],
+  ].map(at);
+  const options = { fixedIndices: [0, 3], yield: async () => {} };
+  const offPath = async (extra) => {
+    const result = await slideLine(rough, raster, { ...options, ...extra });
+    return Math.max(...result.map((point) => Math.abs(metres(point.loc)[0] + 10)));
+  };
+  // Without the map the road's heat is a threat: the line is pulled onto it,
+  // or not slid at all.
+  const unmapped = await offPath({}).catch(() => Infinity);
+  assert.ok(unmapped > 6);
+  const mapped = { otherWays: [[at([0, 50]), at([0, -250])]] };
+  const off = await offPath(mapped);
+  assert.ok(off < 3, `line runs ${off.toFixed(1)} m off the path`);
+});
+
+test("a wide road's bright edge does not pull a path beside it", async () => {
+  // A wide, busy road along x = 0 (heat 8 m either side of its centre),
+  // mapped, and a faint path 20 m west of it, beyond a darker gap. The path is
+  // drawn roughly, halfway to the road's edge (way 450064354).
+  const road = [],
+    path = [];
+  for (let y = 0; y >= -200; y -= 2) {
+    for (let x = -8; x <= 8; x += 2) road.push([x, y]);
+    path.push([-20, y]);
+  }
+  const raster = createHeatmapRaster(
+    trailTiles([
+      { centre: road, peak: 1.3 },
+      { centre: path, peak: 0.5 },
+    ]),
+    15
+  );
+  const rough = [
+    [-20, 0],
+    [-15, -60],
+    [-15, -140],
+    [-20, -200],
+  ].map(at);
+  const result = await slideLine(rough, raster, {
+    fixedIndices: [0, 3],
+    otherWays: [[at([0, 50]), at([0, -250])]],
+    yield: async () => {},
+  });
+  const off = Math.max(...result.map((point) => Math.abs(metres(point.loc)[0] + 20)));
+  assert.ok(off < 3, `line runs ${off.toFixed(1)} m off the path`);
+});
+
+// Open: the contrast normalisation still rates the faint trail against the
+// bright one 13 m away (11.6 m off with 12 m, 3.7 m off with 6 m).
+test('a line drawn on a faint trail stays on it, next to a bright unmapped one', { todo: true }, async () => {
+  // A faint trail along x = 0 and a bright, unmapped trail 13 m west of it.
+  // The line is drawn on the faint trail, slightly off (way 450064350).
+  const faint = [],
+    bright = [];
+  for (let y = 0; y >= -200; y -= 2) {
+    faint.push([0, y]);
+    bright.push([-13, y]);
+  }
+  const raster = createHeatmapRaster(
+    trailTiles([
+      { centre: faint, peak: 0.15 },
+      { centre: bright, peak: 1.3 },
+    ]),
+    15
+  );
+  const rough = [
+    [0, 0],
+    [-1.5, -50],
+    [1.5, -100],
+    [-1.5, -150],
+    [0, -200],
+  ].map(at);
+  const result = await slideLine(rough, raster, {
+    fixedIndices: [0, 4],
+    yield: async () => {},
+  });
+  const off = Math.max(...result.map((point) => Math.abs(metres(point.loc)[0])));
+  assert.ok(off < 3, `line runs ${off.toFixed(1)} m off the faint trail`);
+});
+
+test('a path branching off a mapped road still slides from the junction', async () => {
+  // The path leaves the road at (0, 0), heads south-west, then runs 10 m west
+  // of it.
+  const road = [],
+    path = [];
+  for (let y = 50; y >= -200; y -= 2) road.push([0, y]);
+  for (let s = 0; s <= 20; s += 1) path.push([-s / 2, -s]);
+  for (let y = -22; y >= -200; y -= 2) path.push([-10, y]);
+  const raster = createHeatmapRaster(
+    trailTiles([
+      { centre: road, peak: 1.3 },
+      { centre: path, peak: 0.3 },
+    ]),
+    15
+  );
+  const rough = [
+    [0, 0],
+    [-6, -60],
+    [-6, -140],
+    [-10, -200],
+  ].map(at);
+  const result = await slideLine(rough, raster, {
+    fixedIndices: [0, 3],
+    otherWays: [[at([0, 50]), rough[0], at([0, -250])]],
+    yield: async () => {},
+  });
+  const offPath = (p) =>
+    Math.min(...path.map((c) => Math.hypot(c[0] - p[0], c[1] - p[1])));
+  const off = Math.max(...result.map((point) => offPath(metres(point.loc))));
+  assert.ok(off < 3, `line runs ${off.toFixed(1)} m off the path`);
+});
+
+test('a section never jumps to another heat trace', async () => {
+  // A faint path along x = -10, and a stronger unmapped trace 10 m east of
+  // its middle. The middle section must not detour onto it.
+  const path = [],
+    other = [];
+  for (let y = 0; y >= -200; y -= 2) path.push([-10, y]);
+  for (let y = -40; y >= -160; y -= 2) other.push([0, y]);
+  const raster = createHeatmapRaster(
+    trailTiles([
+      { centre: path, peak: 0.3 },
+      { centre: other, peak: 1.3 },
+    ]),
+    15
+  );
+  const rough = [
+    [-10, 0],
+    [-10, -15],
+    [-10, -30],
+    [-10, -170],
+    [-10, -185],
+    [-10, -200],
+  ].map(at);
+  const result = await slideLine(rough, raster, {
+    fixedIndices: [0, 5],
+    yield: async () => {},
+  });
+  assert.ok(result.skipped > 0); // the middle is left as drawn
+  const off = Math.max(...result.map((point) => Math.abs(metres(point.loc)[0] + 10)));
+  assert.ok(off < 3, `line jumps ${off.toFixed(1)} m off the path`);
 });

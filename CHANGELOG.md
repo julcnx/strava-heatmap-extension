@@ -10,8 +10,9 @@
   - Removes duplicate points, keeps tags and connections, and never edits a line changed while Slide was running
   - Activity picker when several Strava overlays are enabled, progress dialog with cancel, theme-aware icon, and support for Strava's new grayscale tiles
 - [iD] Strava Slide improvements:
-  - Untagged junctions and line ends also move onto the trail (at most 18 m); tagged nodes, relation members, bridges, tunnels and short ways stay in place
+  - The line's ends, junctions, tagged nodes and relation members stay in place
   - Works on closed lines; sections without a usable heatmap trail are left as drawn instead of failing the whole line
+  - Ignores the heat of other mapped roads and paths next to the line, including the bright edges of wide roads, so a stronger parallel trail does not pull it
   - Avoids running along other roads into a junction, folding back over itself, spikes and near-duplicate points; one Shift+S runs two smoothing passes
   - Shift+S works right after drawing a line; Slide sits after Straighten in the edit menu; clearer, colored messages
 - [iD] Show a one-time notice on mapping responsibly with the Strava heatmap

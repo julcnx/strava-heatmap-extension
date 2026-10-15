@@ -19,6 +19,9 @@
   .item .head b { color: #8cf; font-weight: 600; }
   .item .head span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.8; }
   .item .head button { background: none; border: 0; color: #888; cursor: pointer; }
+  .item .head input { margin: 0; accent-color: #7dff3a; cursor: pointer; }
+  .item.done .head b { color: #7a9; }
+  #show { width: 100%; margin-bottom: 8px; padding: 4px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; }
   .chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
   .chip { font: 11px system-ui; padding: 1px 7px; border-radius: 9px; border: 1px solid #444; background: none; color: #999; cursor: pointer; }
   .chip.on { background: #7dff3a; border-color: #7dff3a; color: #111; }
@@ -48,7 +51,8 @@
 </form>
 <div id="map"></div>
 <div id="loading"><div id="loadingText"></div></div>
-<aside id="list"><button id="add" disabled>+ Add current way</button><div id="filters"></div><div id="items"></div></aside>
+<aside id="list"><button id="add" disabled>+ Add current way</button>
+  <select id="show"><option value="open">Not fixed</option><option value="fixed">Fixed</option><option value="all">All</option></select><div id="filters"></div><div id="items"></div></aside>
 <script>
 const map = L.map('map', { maxZoom: 20 }).setView([36.757, -4.395], 16);
 const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19, className: 'base', attribution: 'Esri World Imagery' });
@@ -118,9 +122,18 @@ function drawWays(ways) {
 const fail = (err) => $('status').textContent = err.message;
 // Ways worked on, with problem tags: kept in localStorage, and written to
 // slide-lab-ways.js by the server, so they can be re-run from the command line.
-const TAGS = ['jump', 'parallel', 'junction', 'switchback', 'faint', 'end', 'wobbly', 'fixed', 'ok'];
-const GOOD = ['fixed', 'ok'];
+// "Fixed" is the checkbox in front of each way (stored as the `fixed` tag),
+// not a chip; the list shows the ways not fixed yet unless asked otherwise.
+const TAGS = ['jump', 'parallel', 'junction', 'switchback', 'faint', 'end', 'wobbly', 'ok'];
+const GOOD = ['ok'];
 let ways = [], filter = null;
+try { $('show').value = localStorage.getItem('slideLab.show') || 'open'; } catch {}
+$('show').onchange = () => {
+  try { localStorage.setItem('slideLab.show', $('show').value); } catch {}
+  renderList();
+};
+const isFixed = (w) => w.tags.includes('fixed');
+const shown = () => ways.filter((w) => $('show').value === 'all' || isFixed(w) === ($('show').value === 'fixed'));
 try { ways = JSON.parse(localStorage.getItem('slideLab.ways')) || []; } catch {}
 // Ways from the file that this browser does not know yet.
 for (const w of window.SLIDE_LAB_WAYS || []) if (!ways.some((v) => v.id === w.id)) ways.push(w);
@@ -145,21 +158,26 @@ const chip = (tag, on, onclick) => {
 };
 function renderList() {
   $('add').disabled = !current || ways.some((w) => w.id === current.id);
-  const used = [...new Set([...TAGS, ...ways.flatMap((w) => w.tags)])];
-  $('filters').replaceChildren(...used.map((tag) => chip(tag + ' ' + ways.filter((w) => w.tags.includes(tag)).length, filter === tag, () => { filter = filter === tag ? null : tag; renderList(); })));
-  $('items').replaceChildren(...ways.filter((w) => !filter || w.tags.includes(filter)).map((w) => {
+  const list = shown();
+  const used = [...new Set([...TAGS, ...ways.flatMap((w) => w.tags)])].filter((tag) => tag !== 'fixed');
+  $('filters').replaceChildren(...used.map((tag) => chip(tag + ' ' + list.filter((w) => w.tags.includes(tag)).length, filter === tag, () => { filter = filter === tag ? null : tag; renderList(); })));
+  $('items').replaceChildren(...list.filter((w) => !filter || w.tags.includes(filter)).map((w) => {
     const item = document.createElement('div');
-    item.className = 'item' + (w.id === $('way').value.trim() ? ' current' : '');
-    item.innerHTML = '<div class="head"><b></b><span></span><button title="Forget">×</button></div><div class="chips"></div>';
+    item.className = 'item' + (w.id === $('way').value.trim() ? ' current' : '') + (isFixed(w) ? ' done' : '');
+    item.innerHTML = '<div class="head"><input type="checkbox" title="Fixed"><b></b><span></span><button title="Forget">×</button></div><div class="chips"></div>';
     item.querySelector('b').textContent = w.id;
     item.querySelector('span').textContent = w.name || '';
+    const toggle = (tag) => { w.tags = w.tags.includes(tag) ? w.tags.filter((t) => t !== tag) : [...w.tags, tag]; saveWays(); };
+    const done = item.querySelector('input');
+    done.checked = isFixed(w);
+    done.onchange = () => toggle('fixed');
     item.querySelector('.head').onclick = (e) => {
+      if (e.target === done) return;
       if (e.target.tagName === 'BUTTON') { ways = ways.filter((v) => v !== w); saveWays(); return; }
       $('way').value = w.id; run().catch(fail);
     };
-    const toggle = (tag) => { w.tags = w.tags.includes(tag) ? w.tags.filter((t) => t !== tag) : [...w.tags, tag]; saveWays(); };
     const chips = item.querySelector('.chips');
-    for (const tag of [...new Set([...TAGS, ...w.tags])]) chips.append(chip(tag, w.tags.includes(tag), () => toggle(tag)));
+    for (const tag of [...new Set([...TAGS, ...w.tags])].filter((tag) => tag !== 'fixed')) chips.append(chip(tag, w.tags.includes(tag), () => toggle(tag)));
     chips.append(chip('+', false, () => { const tag = prompt('New tag')?.trim(); if (tag && !w.tags.includes(tag)) toggle(tag); }));
     return item;
   }));

@@ -189,7 +189,9 @@ function trimJunctionOverlaps(before, selection, result) {
   for (let index = 0; index < selection.nodes.length; index++) {
     const node = selection.nodes[index];
     for (const other of before.parentWays(node)) {
-      if (other.id === selection.way.id) continue;
+      // Only roads and paths have heat of their own (like otherWays in
+      // index.js): a firebreak or a fence along the trail is not another trail.
+      if (other.id === selection.way.id || !other.tags.highway) continue;
       if (!points.some((point) => point.nodeIndex === index)) continue;
       const origin = node.loc;
       const line = before.childNodes(other).map((n) => toMeters(n.loc, origin));

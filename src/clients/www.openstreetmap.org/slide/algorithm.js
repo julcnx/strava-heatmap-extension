@@ -61,8 +61,9 @@ const EARTH_CIRCUMFERENCE = 40075016.68557849;
 //   alignMeters            – a vertex already on a trail moves at most this
 //                             far, across the line, to centre on it
 //   jumpMeters             – a traced section straying sideways from its
-//                             drawn segment further than this beyond its
-//                             anchors jumped to another trace
+//                             drawn segment further than this (or than
+//                             JUMP_BULGE of its length) beyond its anchors
+//                             jumped to another trace
 export const SLIDE_DEFAULTS = Object.freeze({
   searchRadiusMeters: 24,
   maxSearchRadiusMeters: 80,
@@ -520,14 +521,17 @@ function maskOtherWays(raster, otherWays, locations, scale) {
 // The raw raster answers "how hot is this pixel?"; the tracking surface
 // answers "is this pixel a local ridge?". Discovery – snapping and tracing –
 // runs on the tracking surface so a faint but consistent forest trail is
-// followed just like a bright road. The small absolute floor keeps isolated
-// compression specks from being amplified into convincing trails. Geometry
+// followed just like a bright road. Heat under MIN_HEAT counts as none, so
+// compression specks and the near-empty heat of an area nobody records
+// (around 0.01) are not amplified into convincing trails: the faintest real
+// trails are around 0.05. Geometry
 // quality decisions elsewhere still use the RAW density, so a wide saturated
 // band is not mistaken for a narrow ridge.
 //
 // The neighbourhood maximum is computed with a sliding-window deque (a
 // monotonic maximum filter) in two passes – rows, then columns – which is
 // O(pixels) instead of O(pixels × radius²).
+const MIN_HEAT = 0.02;
 async function trackingSurface(raster, scale, options) {
   const radius = Math.max(1, Math.ceil(SLIDE_DEFAULTS.contrastRadiusMeters / scale));
   const { width, height, density, coverage } = raster;
@@ -573,7 +577,10 @@ async function trackingSurface(raster, scale, options) {
       }
       while (queue[head] < y - radius) head++;
       const index = y * width + x;
-      signal[index] = value(index) / Math.max(0.004, horizontal[queue[head] * width + x]);
+      signal[index] =
+        value(index) < MIN_HEAT
+          ? 0
+          : value(index) / Math.max(MIN_HEAT, horizontal[queue[head] * width + x]);
       if (signal[index] >= 0.25) hasSignal = true;
     }
   }
@@ -697,6 +704,15 @@ function snap(raster, point, radius, normal, align = radius, hold = 0) {
   }
   return best;
 }
+
+// A long drawn segment often cuts across a curve of its trail: the trail may
+// bulge away from it by this fraction of its length (see jumpMeters).
+const JUMP_BULGE = 0.25;
+// A drawn segment crossing this much dark ground cut a corner of its trail.
+const CORNER_GAP_METERS = 6;
+// A tight-corridor trace with more of its points than this at the corridor's
+// edge is pressed against it (see traceSection).
+const TIGHT_EDGE_SHARE = 0.1;
 
 // Find the cheapest continuous grid path from `start` to `end` that stays
 // inside a corridor of `radius` pixels around the original segment
@@ -868,7 +884,25 @@ async function trace(raster, start, end, originalStart, originalEnd, radius, opt
       : Math.hypot(p[0] - originalStart[0], p[1] - originalStart[1]);
   const offset = Math.max(sideways(start), sideways(end));
   const stray = Math.max(...points.map(sideways));
-  if (stray > offset + SLIDE_DEFAULTS.jumpMeters / options.scale) {
+  const bulge = Math.max(
+    SLIDE_DEFAULTS.jumpMeters / options.scale,
+    JUMP_BULGE * Math.hypot(dx, dy)
+  );
+  // Unless the straight line between the anchors crosses dark ground: the
+  // drawing cut a corner (e.g. a hairpin) and the trail must swing away from
+  // it. The gap checks below still apply to the traced path.
+  const chord = Math.hypot(end[0] - start[0], end[1] - start[1]);
+  let darkRun = 0,
+    cutsCorner = false;
+  for (let s = 0; s <= chord; s++) {
+    const p = [
+      start[0] + ((end[0] - start[0]) * s) / Math.max(1, chord),
+      start[1] + ((end[1] - start[1]) * s) / Math.max(1, chord),
+    ];
+    darkRun = sampleDensity(raster, p) < 0.12 ? darkRun + 1 : 0;
+    if (darkRun * options.scale >= CORNER_GAP_METERS) cutsCorner = true;
+  }
+  if (!cutsCorner && stray > offset + bulge) {
     throw noSignal('The heatmap trail here jumps to another trace.');
   }
   const maxGap = 12 / options.scale;
@@ -1191,8 +1225,28 @@ export async function slideLine(locations, raster, options = {}) {
     return traceSection(i);
   };
   const traceSection = async (i) => {
-    // Start with a narrow corridor (precise on hairpins) and widen only when
-    // the trail cannot be reached or is not continuous within it.
+    // First a tight corridor, jumpMeters beyond the anchors' own offset: when
+    // the drawing lies on a trail of its own (even faint, next to a brighter
+    // one), that trail is traced down the corridor's middle and kept. A trace
+    // pressed against the corridor's edge means the trail lies outside it (a
+    // curve the drawing cut across): widen as below.
+    const [a, b] = [originals[i - 1], originals[i]];
+    const tight =
+      Math.max(distanceToSegment(anchors[i - 1], a, b), distanceToSegment(anchors[i], a, b)) +
+      SLIDE_DEFAULTS.jumpMeters / scale;
+    try {
+      const path = await trace(tracking, anchors[i - 1], anchors[i], a, b, tight, {
+        ...options,
+        avoid,
+        avoidExclude,
+      });
+      const edge = path.filter((p) => distanceToSegment(p, a, b) > tight - 1.5).length;
+      if (edge <= path.length * TIGHT_EDGE_SHARE) return path;
+    } catch (error) {
+      if (error.code !== 'SLIDE_NO_SIGNAL') throw error;
+    }
+    // Then a narrow corridor (precise on hairpins), widened only when the
+    // trail cannot be reached or is not continuous within it.
     for (const r of searchRadii(radius, maxSearchMeters / scale)) {
       await options.yield();
       checkAbort(options.signal);
@@ -1212,9 +1266,12 @@ export async function slideLine(locations, raster, options = {}) {
     }
     return null;
   };
+  // Sections the caller wants left as drawn (slideLineTwice: those the first
+  // pass left as drawn) are not traced.
+  const untraced = new Set(options.untracedSections || []);
   const paths = [null];
   for (let i = 1; i < originals.length; i++) {
-    paths[i] = await traceSection(i);
+    paths[i] = untraced.has(i) ? null : await traceSection(i);
     if (paths[i]) markAvoid(paths[i]);
     options.onProgress?.(i / (originals.length - 1));
   }
@@ -1230,6 +1287,24 @@ export async function slideLine(locations, raster, options = {}) {
           if (w > 0 && paths[w]) paths[w] = await retraceSection(w);
           if (w + 1 < originals.length && paths[w + 1])
             paths[w + 1] = await retraceSection(w + 1);
+        }
+        changed = true;
+      }
+    }
+  }
+  // A vertex next to a section left as drawn is where the heat ends: if it
+  // was found off the trail (moved further than `align`), it stays as drawn.
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let i = 1; i < originals.length; i++) {
+      if (paths[i] && !unsnapped.has(i - 1) && !unsnapped.has(i)) continue;
+      for (const v of [i - 1, i]) {
+        if (fixed.has(v) || unsnapped.has(v)) continue;
+        const [dx, dy] = [anchors[v][0] - originals[v][0], anchors[v][1] - originals[v][1]];
+        if (Math.hypot(dx, dy) <= align) continue;
+        for (const w of twin(v) < 0 ? [v] : [v, twin(v)]) {
+          unsnapped.add(w);
+          anchors[w] = originals[w];
         }
         changed = true;
       }
@@ -1265,8 +1340,9 @@ export async function slideLine(locations, raster, options = {}) {
     }
     return [points[0], ...points.slice(k)];
   };
+  // A vertex between two sections left as drawn stays as drawn too.
   const locate = (i) =>
-    fixed.has(i) || unsnapped.has(i)
+    fixed.has(i) || unsnapped.has(i) || (!traced[i] && !traced[i + 1])
       ? locations[i].slice()
       : unproject(anchors[i], raster.zoom);
   const result = [{ loc: locate(0), nodeIndex: 0 }];
@@ -1277,13 +1353,16 @@ export async function slideLine(locations, raster, options = {}) {
     );
   }
   for (let i = 1; i < originals.length; i++) {
-    let reduced = traced[i]
-      ? removeSmallTurns(simplify(paths[i], tolerance, tracking), minArea)
-      : [];
-    if (reduced.length > 2) {
-      reduced = approach(reduced, approachLength(i - 1));
-      reduced = approach(reduced.reverse(), approachLength(i)).reverse();
+    // Approach on the traced pixels, before simplifying: on simplified points
+    // the straight join would run on to the next kept point, across a bend.
+    let path = traced[i] ? paths[i] : [];
+    if (path.length > 2) {
+      path = approach(path, approachLength(i - 1));
+      path = approach(path.slice().reverse(), approachLength(i)).reverse();
     }
+    const reduced = traced[i]
+      ? removeSmallTurns(simplify(path, tolerance, tracking), minArea)
+      : [];
     // The path's first and last pixel are the anchors themselves, which the
     // next iteration emits as section endpoints — skip them here.
     for (let j = 1; j < reduced.length - 1; j++) {
@@ -1294,6 +1373,8 @@ export async function slideLine(locations, raster, options = {}) {
       // everything else takes the snapped anchor position.
       loc: locate(i),
       nodeIndex: i,
+      // The section ending here was left as drawn.
+      untraced: !traced[i],
     });
   }
   checkAbort(options.signal);
@@ -1344,14 +1425,17 @@ export async function slideLineTwice(locations, raster, options = {}) {
   if (first.length > 1000) return first;
   const fixed = new Set(options.fixedIndices || []);
   const limited = new Set(options.limitedIndices || []);
+  // What the first pass left as drawn stays as drawn: its vertices are fixed
+  // and its sections are not traced again (no points are added there).
   const second = await slideLine(
     first.map((record) => record.loc),
     raster,
     {
       ...options,
       fixedIndices: first.flatMap((record, i) =>
-        fixed.has(record.nodeIndex) ? [i] : []
+        fixed.has(record.nodeIndex) || record.drawn ? [i] : []
       ),
+      untracedSections: first.flatMap((record, i) => (record.untraced ? [i] : [])),
       limitedIndices: first.flatMap((record, i) =>
         limited.has(record.nodeIndex) ? [i] : []
       ),

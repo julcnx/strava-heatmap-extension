@@ -2,6 +2,53 @@
 // scripts/slide-lab.mjs when the page saves its list.
 window.SLIDE_LAB_WAYS = [
  {
+  "id": "556809921",
+  "name": "path",
+  "tags": [
+   "fixed"
+  ]
+ },
+ {
+  "id": "897546336",
+  "name": "track",
+  "tags": [
+   "jump",
+   "parallel"
+  ]
+ },
+ {
+  "id": "897542733",
+  "name": "path",
+  "tags": [
+   "fixed",
+   "jump"
+  ]
+ },
+ {
+  "id": "426693086",
+  "name": "track",
+  "tags": [
+   "jump",
+   "fixed"
+  ]
+ },
+ {
+  "id": "426693833",
+  "name": "track",
+  "tags": [
+   "jump",
+   "fixed"
+  ]
+ },
+ {
+  "id": "897542732",
+  "name": "path",
+  "tags": [
+   "jump",
+   "fixed"
+  ]
+ },
+ {
   "id": "976092305",
   "name": "path",
   "tags": [
@@ -56,7 +103,8 @@ window.SLIDE_LAB_WAYS = [
   "tags": [
    "parallel",
    "jump",
-   "faint"
+   "faint",
+   "fixed"
   ]
  },
  {
@@ -74,7 +122,8 @@ window.SLIDE_LAB_WAYS = [
   "tags": [
    "switchback",
    "wobbly",
-   "jump"
+   "jump",
+   "fixed"
   ]
  }
 ];

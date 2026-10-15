@@ -2,6 +2,32 @@
 // scripts/slide-lab.mjs when the page saves its list.
 window.SLIDE_LAB_WAYS = [
  {
+  "id": "36964415",
+  "name": "Bibbulmun Track",
+  "tags": [
+   "fixed"
+  ]
+ },
+ {
+  "id": "311504885",
+  "name": "Blinman Pools Walking Trail",
+  "tags": [
+   "wontfix"
+  ]
+ },
+ {
+  "id": "260860803",
+  "name": "track",
+  "tags": []
+ },
+ {
+  "id": "1568171469",
+  "name": "path",
+  "tags": [
+   "end"
+  ]
+ },
+ {
   "id": "556809921",
   "name": "path",
   "tags": [
@@ -13,7 +39,8 @@ window.SLIDE_LAB_WAYS = [
   "name": "track",
   "tags": [
    "jump",
-   "parallel"
+   "parallel",
+   "wontfix"
   ]
  },
  {

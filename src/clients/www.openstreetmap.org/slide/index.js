@@ -142,6 +142,40 @@ function showProgress(context, controller, sources) {
 // Called once by the extension after iD has booted. `isAuthenticated` reports
 // the Strava login state of the extension (the tile requests would come back
 // 401 without it).
+// Download the OSM data Slide needs, if iD has not loaded it yet: around every
+// point of the line (what it connects to) and SLIDE_DEFAULTS.maxSearchRadiusMeters
+// beyond (the other roads and paths whose heat is ignored). iD shows a whole
+// line as soon as part of it is loaded, so this is often missing. iD's own
+// loader merges the data into the map, like panning there would.
+const OSM_DATA_TIMEOUT_MS = 30000;
+async function loadOsmData(context, locations, signal, onProgress) {
+  const connection = context.connection();
+  if (!connection || typeof context.loadTileAtLoc !== 'function') return;
+  const pad = SLIDE_DEFAULTS.maxSearchRadiusMeters / 111320;
+  const points = locations.flatMap(([lon, lat]) => {
+    const dLon = pad / Math.cos((lat * Math.PI) / 180);
+    return [
+      [lon, lat],
+      [lon - dLon, lat],
+      [lon + dLon, lat],
+      [lon, lat - pad],
+      [lon, lat + pad],
+    ];
+  });
+  const missing = () => points.filter((loc) => !connection.isDataLoaded(loc));
+  const started = Date.now();
+  for (let round = 0; missing().length; round++) {
+    onProgress(1 - missing().length / points.length);
+    if (signal.aborted) throw new DOMException('Slide was cancelled.', 'AbortError');
+    if (Date.now() - started > OSM_DATA_TIMEOUT_MS)
+      throw new Error('The OSM data around the line could not be downloaded. Please try again.');
+    // Ask again every second: iD skips tiles already loading, and drops
+    // requests while its queue is full.
+    if (round % 5 === 0) missing().forEach((loc) => context.loadTileAtLoc(loc));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+
 function isEmptyPresetSearch(target) {
   return (
     target instanceof HTMLInputElement &&
@@ -171,10 +205,6 @@ export async function setupSlide(
       // the selection may have changed while it was open.
       if (!(await ensureNotice())) return;
       if (operation.disabled()) return;
-      // Snapshot the graph: everything is computed against this state, and
-      // action.js refuses to apply the edit if it no longer matches.
-      const graph = context.graph();
-      const selection = getSlideSelection(graph, ids);
       const controller = new AbortController();
       const sources = heatmapSources();
       busy = true;
@@ -182,6 +212,18 @@ export async function setupSlide(
       try {
         progress = showProgress(context, controller, sources);
         const source = await progress.chooseSource();
+        // Only shown when iD has not loaded all the data yet.
+        await loadOsmData(
+          context,
+          getSlideSelection(context.graph(), ids).nodes.map((node) => node.loc),
+          controller.signal,
+          (value) => progress.update('Loading OSM data…', value)
+        );
+        // Snapshot the graph: everything is computed against this state, and
+        // action.js refuses to apply the edit if it no longer matches.
+        const graph = context.graph();
+        const selection = getSlideSelection(graph, ids);
+        if (!selection) throw new Error('The line changed while Slide was running. Please try again.');
         const locations = selection.nodes.map((node) => node.loc);
         // Other roads and paths near the line: their heat is theirs, so the
         // line is not pulled onto a stronger parallel trail.
@@ -352,15 +394,9 @@ export async function setupSlide(
       if (selection.nodes.length > 1000)
         return 'Select a shorter section (at most 1000 points).';
       if (isStructure(selection.way)) return 'Slide does not move bridges or tunnels.';
-      const connection = context.connection();
-      if (
-        selection.nodes.some((node) => connection && !connection.isDataLoaded(node.loc))
-      ) {
-        return 'Download the OSM data around the line before sliding.';
-      }
-      if (selection.nodes.some((node) => context.hasHiddenConnections(node.id))) {
-        return 'Show connected map features before sliding.';
-      }
+      // Missing OSM data around the line is downloaded when Slide runs. Hidden
+      // connected features need not be shown: Slide never moves or deletes a
+      // node shared with another way (junctions stay fixed).
       return false;
     };
     operation.tooltip = () =>

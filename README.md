@@ -79,7 +79,6 @@ Feedback and test cases are collected in [#43](https://github.com/julcnx/strava-
 
 - **Parallel trails:** the heat within a few metres of other mapped roads and paths is ignored, and a section that would detour onto another heat trace is left as drawn. A point drawn closer to a stronger trail than to its own can still snap onto it. Workaround: Undo and slide only the sections around it (select two points: the selected end points stay in place), then fix that part by hand. Next step: snap to the closest trail rather than the strongest.
 - **Some lines need a second Slide:** a second Shift+S often smooths the remaining kinks. Next step: repeat automatically until the line stops changing.
-- **"Download the OSM data around the line before sliding":** iD shows the whole line as soon as one part of it is downloaded, but Slide needs the OSM data around every point to know what is connected. Workaround: pan along the whole line at zoom 16 or closer. Next step (v0.16.0): download the missing data automatically.
 - **"Slide needs too many tiles":** the box around the line must fit in 16 heatmap tiles (about 4 × 4 km, less at high latitudes), so long or diagonal lines are refused. Workaround: select two points and slide the line in sections. Next step (v0.16.0): split long lines into sections automatically, with one Undo.
 
 The extension's shortcuts are also listed in iD's keyboard shortcuts panel (**?**).

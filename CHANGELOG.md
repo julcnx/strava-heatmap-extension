@@ -15,6 +15,7 @@
   - Ignores the heat of other mapped roads and paths next to the line, including the bright edges of wide roads, so a stronger parallel trail does not pull it
   - Avoids running along other roads into a junction, folding back over itself, spikes and near-duplicate points; one Shift+S runs two smoothing passes
   - Shift+S works right after drawing a line; Slide sits after Straighten in the edit menu; clearer, colored messages
+  - Downloads the missing OSM data around the line by itself, instead of asking you to pan along it first
 - [iD] Show a one-time notice on mapping responsibly with the Strava heatmap
 - [iD] List the extension's shortcuts (Shift+Q, Shift+W, Shift+S) in iD's keyboard shortcuts panel
 

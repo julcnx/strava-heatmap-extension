@@ -1572,8 +1572,85 @@ export async function slideLineTwice(locations, raster, options = {}) {
     })),
     raster
   ).map(({ loc, nodeIndex }) => ({ loc, nodeIndex }));
-  result.skipped = first.skipped;
-  return result;
+  const stable = keepStable(locations, result);
+  stable.skipped = first.skipped;
+  return stable;
+}
+
+// Where the slid line stays within STABLE_METERS of the line as it was, keep
+// the points as they were: the trace runs on whole heatmap pixels (about 2 m),
+// so sliding a line already on its trail would otherwise move it a little
+// differently every time. Only the stretches that really changed are replaced
+// (a slid point further than this from the old line, or an old point further
+// than this from the slid one), so a repeated Slide leaves a settled line
+// alone.
+const STABLE_METERS = 2;
+function keepStable(locations, result) {
+  if (locations.length < 2 || result.length < 2) return result;
+  const lat0 = (locations[0][1] * Math.PI) / 180;
+  const xy = ([lon, lat]) => [lon * 111320 * Math.cos(lat0), lat * 110540];
+  const P = locations.map(xy),
+    Q = result.map((r) => xy(r.loc));
+  const along = [0];
+  for (let k = 1; k < P.length; k++)
+    along.push(along[k - 1] + Math.hypot(P[k][0] - P[k - 1][0], P[k][1] - P[k - 1][1]));
+  // Distance from p to a polyline, and how far along it p projects.
+  const nearest = (p, line, cumulative) => {
+    let best = { d: Infinity, s: 0 };
+    for (let k = 1; k < line.length; k++) {
+      const [a, b] = [line[k - 1], line[k]];
+      const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+      const length = dx * dx + dy * dy;
+      const t = length ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length)) : 0;
+      const d = Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+      if (d < best.d) best = { d, s: cumulative ? cumulative[k - 1] + t * Math.sqrt(length) : 0 };
+    }
+    return best;
+  };
+  const onP = Q.map((q) => nearest(q, P, along));
+  const pMoved = P.map((p) => nearest(p, Q).d > STABLE_METERS);
+  // Walk the slid line in runs of points within STABLE_METERS of the old line
+  // or not. A close run takes the old points over the same stretch instead,
+  // unless an old point there strayed from the slid line, or the two differ
+  // in point count (a drawn line next to its slid version; a repeated Slide
+  // has about the same points). The ends of the line are fixed, so the runs
+  // start and end on old points.
+  const out = [];
+  let changed = false;
+  for (let a = 0; a < Q.length; ) {
+    const close = onP[a].d <= STABLE_METERS;
+    let b = a;
+    while (b + 1 < Q.length && onP[b + 1].d <= STABLE_METERS === close) b++;
+    const old = [];
+    if (close)
+      for (let i = 0; i < P.length; i++)
+        if (along[i] >= onP[a].s - 1e-6 && along[i] <= onP[b].s + 1e-6) old.push(i);
+    const keepOld =
+      close &&
+      old.length &&
+      !old.some((i) => pMoved[i]) &&
+      Math.abs(old.length - (b - a + 1)) <= Math.max(2, 0.25 * Math.max(old.length, b - a + 1));
+    if (keepOld) old.forEach((i) => out.push({ loc: locations[i].slice(), nodeIndex: i }));
+    else {
+      changed = true;
+      for (let k = a; k <= b; k++) out.push({ loc: result[k].loc.slice(), nodeIndex: result[k].nodeIndex });
+    }
+    a = b + 1;
+  }
+  if (!changed) return locations.map((loc, i) => ({ loc: loc.slice(), nodeIndex: i }));
+  // Each original vertex at most once, in order.
+  let previous = -1;
+  return out.flatMap((point, k) => {
+    if (point.nodeIndex === null) return [point];
+    if (point.nodeIndex <= previous) {
+      // The same old point from both sides of a run boundary: keep one.
+      const prev = out[k - 1];
+      if (prev && prev.nodeIndex === point.nodeIndex) return [];
+      return [{ ...point, nodeIndex: null }];
+    }
+    previous = point.nodeIndex;
+    return [point];
+  });
 }
 
 // Smooth the slid line's turns: the heatmap is too coarse to show the curve of

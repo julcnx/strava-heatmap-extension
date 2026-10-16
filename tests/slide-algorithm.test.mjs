@@ -322,3 +322,54 @@ test('a turn is smoothed with extra points that stay on the trail', async () => 
   );
   assert.ok(off < 4, `line runs ${off.toFixed(1)} m off the trail`);
 });
+
+test('a drawn jog across the trail is straightened, not kept as a switchback', async () => {
+  // A straight trail along x = 0, drawn 2 m west of it, then one short leg
+  // over to 2 m east: two opposite bends joined by a short leg between long
+  // ones are a jog of the drawing, not switchbacks.
+  const centre = [];
+  for (let y = 0; y >= -200; y -= 2) centre.push([0, y]);
+  const raster = createHeatmapRaster(trailTiles([{ centre, peak: 1 }]), 15);
+  const rough = [
+    [0, 0],
+    [-2, -60],
+    [-2, -100],
+    [2, -106],
+    [2, -150],
+    [0, -200],
+  ].map(at);
+  const result = await slideLineTwice(rough, raster, {
+    fixedIndices: [0, 5],
+    yield: async () => {},
+  });
+  const off = Math.max(...result.map((p) => Math.abs(metres(p.loc)[0])));
+  assert.ok(off < 1.5, `line runs ${off.toFixed(1)} m off the trail`);
+});
+
+test('sliding a slid line again leaves it unchanged', async () => {
+  // A trail curving west then south; a second Slide must not move the first
+  // result by the width of a heatmap pixel each time.
+  const centre = [];
+  for (let a = 0; a <= 90; a += 2) {
+    const r = (a * Math.PI) / 180;
+    centre.push([100 * Math.cos(r) - 100, -100 * Math.sin(r)]);
+  }
+  const raster = createHeatmapRaster(trailTiles([{ centre, peak: 1 }]), 15);
+  const rough = [
+    [0, 0],
+    [-8, -45],
+    [-35, -88],
+    [-100, -100],
+  ].map(at);
+  const options = { fixedIndices: [0, 3], yield: async () => {} };
+  const first = await slideLineTwice(rough, raster, options);
+  const second = await slideLineTwice(
+    first.map((p) => p.loc),
+    raster,
+    { ...options, fixedIndices: [0, first.length - 1] }
+  );
+  assert.deepEqual(
+    second.map((p) => p.loc),
+    first.map((p) => p.loc)
+  );
+});

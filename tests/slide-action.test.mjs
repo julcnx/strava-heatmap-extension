@@ -69,8 +69,9 @@ const at = (east, north) => [east / 111319.49, north / 110574];
 let nextId = 0;
 const factory = ({ loc }) => new Node(`new${++nextId}`, loc);
 
-// A 110 m line a–b–c whose end `a` is a junction with another 110 m way o.
-function junctionCase(junctionTags = {}) {
+// A 110 m line a–b–c whose end `a` is a junction with another 110 m way o
+// (a path, unless `otherTags` say otherwise).
+function junctionCase(junctionTags = {}, otherTags = { highway: 'path' }) {
   const nodes = {
     a: new Node('a', at(0, 0), junctionTags),
     b: new Node('b', at(55, 33)),
@@ -79,7 +80,7 @@ function junctionCase(junctionTags = {}) {
     o2: new Node('o2', at(0, 55)),
   };
   const way = new Way('w', ['a', 'b', 'c']);
-  const graph = new Graph({ ...nodes, w: way, o: new Way('o', ['o1', 'a', 'o2']) });
+  const graph = new Graph({ ...nodes, w: way, o: new Way('o', ['o1', 'a', 'o2'], otherTags) });
   return {
     graph,
     selection: { way, start: 0, end: 2, nodes: [nodes.a, nodes.b, nodes.c] },
@@ -189,6 +190,23 @@ test('running along the other way into a junction is trimmed', () => {
   assert.deepEqual([...cleanSlideResult(graph, selection, kept)], [...kept]); // idempotent
 });
 
+test('a firebreak or other non-road way at a junction is not trimmed along', () => {
+  // A firebreak sharing nodes with a path runs right along it: it has no heat
+  // of its own, so the slid line next to it is the path's own trail.
+  const result = [
+    { loc: at(0, 0), nodeIndex: 0 },
+    { loc: at(5, 11), nodeIndex: null },
+    { loc: at(7, 20), nodeIndex: null },
+    { loc: at(16, 27), nodeIndex: null },
+    { loc: at(55, 33), nodeIndex: 1 },
+    { loc: at(110, 33), nodeIndex: 2 },
+  ];
+  const { graph, selection } = junctionCase({}, { man_made: 'cutline' });
+  const kept = cleanSlideResult(graph, selection, result);
+  assert.equal(kept.length, result.length);
+  assert.equal(kept.alongOther, 0);
+});
+
 test('a line slid along the way it joins is left as drawn, not trimmed', () => {
   // Example 4 of #43: a path joined to a track at both ends, slid onto the
   // track's heat 5 m beside it. Trimming would leave a straight line.
@@ -204,7 +222,7 @@ test('a line slid along the way it joins is left as drawn, not trimmed', () => {
   const graph = new Graph({
     ...nodes,
     path,
-    track: new Way('track', ['t1', 'a', 'd', 't2']),
+    track: new Way('track', ['t1', 'a', 'd', 't2'], { highway: 'track' }),
   });
   const selection = getSlideSelection(graph, ['path']);
   const result = [{ loc: at(0, 0), nodeIndex: 0 }];

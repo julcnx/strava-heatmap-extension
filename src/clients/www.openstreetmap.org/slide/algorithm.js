@@ -585,7 +585,8 @@ async function trackingSurface(raster, scale, options) {
     }
   }
   if (!hasSignal) throw noSignal('No usable heatmap trail is visible in this area.');
-  return { ...raster, density: signal };
+  // `heat`: the raw density, for the checks that need absolute brightness.
+  return { ...raster, density: signal, heat: raster.density };
 }
 
 // Move one original vertex onto the nearest convincing trail point within
@@ -708,6 +709,20 @@ function snap(raster, point, radius, normal, align = radius, hold = 0) {
 // A long drawn segment often cuts across a curve of its trail: the trail may
 // bulge away from it by this fraction of its length (see jumpMeters).
 const JUMP_BULGE = 0.25;
+// Whether a traced path's raw heat dips below VALLEY_DIP of the heat it has
+// on both sides of the dip (the brightest before and after it).
+const VALLEY_DIP = 0.8;
+function crossesValley(raster, points) {
+  const heat = raster.heat ? { ...raster, density: raster.heat } : raster;
+  const values = points.map((p) => sampleDensity(heat, p));
+  const after = values.slice();
+  for (let k = values.length - 2; k >= 0; k--) after[k] = Math.max(after[k], after[k + 1]);
+  let before = 0;
+  return values.some((value, k) => {
+    before = Math.max(before, value);
+    return value < VALLEY_DIP * Math.min(before, after[k]);
+  });
+}
 // A drawn segment crossing this much dark ground cut a corner of its trail.
 const CORNER_GAP_METERS = 6;
 // A tight-corridor trace with more of its points than this at the corridor's
@@ -884,9 +899,12 @@ async function trace(raster, start, end, originalStart, originalEnd, radius, opt
       : Math.hypot(p[0] - originalStart[0], p[1] - originalStart[1]);
   const offset = Math.max(sideways(start), sideways(end));
   const stray = Math.max(...points.map(sideways));
+  // The bulge allowance is for a trace that stays on one band (its heat never
+  // dips): a trace that crosses a valley of the raw heat on its way out went
+  // over to another trail.
   const bulge = Math.max(
     SLIDE_DEFAULTS.jumpMeters / options.scale,
-    JUMP_BULGE * Math.hypot(dx, dy)
+    crossesValley(raster, points) ? 0 : JUMP_BULGE * Math.hypot(dx, dy)
   );
   // Unless the straight line between the anchors crosses dark ground: the
   // drawing cut a corner (e.g. a hairpin) and the trail must swing away from

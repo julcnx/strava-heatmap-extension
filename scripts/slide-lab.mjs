@@ -5,6 +5,11 @@
 //                                            open scripts/slide-lab.html (file://)
 //   npm run slide-lab -- 223115682 438832711 → render .slide-lab/out/<id>.png
 //
+//   npm run slide-lab:check [-- ids]       → slide every way of the lab list (or
+//                                            the given ones) and compare with
+//                                            scripts/slide-lab-snapshots.json
+//   npm run slide-lab:accept [-- ids]      → record the current results there
+//
 // Options: --activity=run (default all), --dump (print points in PNG pixels),
 // --move-ends (let junction ends move, see slide()), --once (one Slide pass,
 // for debugging).
@@ -501,6 +506,11 @@ export function renderView(run, bbox, width, height) {
   for (const other of run.others) line(other.locs, [61, 139, 255], 1, 6);
   line(run.original, [255, 60, 240], 1.5);
   for (const loc of run.original) dot(...toPx(loc), 5, [255, 60, 240], 1.5);
+  // The accepted result of a regression check, under the new one.
+  if (run.previous) {
+    line(run.previous, [0, 220, 255], 1.5);
+    for (const loc of run.previous) dot(...toPx(loc), 5, [0, 220, 255], 1.5);
+  }
   line(run.result.map((p) => p.loc), [125, 255, 58], 1.5);
   for (const p of run.result) dot(...toPx(p.loc), 5, [125, 255, 58], 1.5);
   for (const i of run.fixed) dot(...toPx(run.original[i]), 9, [255, 255, 255], 2.5);
@@ -510,6 +520,130 @@ export function renderView(run, bbox, width, height) {
   }
   label(rgb, width, height, `way ${run.wayId}`, Math.max(2, Math.round(width / 600)));
   return encodePNG(width, height, rgb);
+}
+
+// --- Regression snapshots -------------------------------------------------------
+
+const SNAPSHOTS = path.resolve(import.meta.dirname, 'slide-lab-snapshots.json');
+const CHANGE_METERS = 2;
+
+function labWays() {
+  const source = fs.readFileSync(path.resolve(import.meta.dirname, 'slide-lab-ways.js'), 'utf8');
+  return JSON.parse(source.slice(source.indexOf('['), source.lastIndexOf(']') + 1));
+}
+
+// Ground distance from a point to a polyline, in metres.
+function distanceToLine(loc, line) {
+  const kx = 111320 * Math.cos((loc[1] * Math.PI) / 180),
+    ky = 110540;
+  let best = Infinity;
+  for (let k = 1; k < line.length; k++) {
+    const a = [(line[k - 1][0] - loc[0]) * kx, (line[k - 1][1] - loc[1]) * ky],
+      b = [(line[k][0] - loc[0]) * kx, (line[k][1] - loc[1]) * ky];
+    const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+    const length = dx * dx + dy * dy;
+    const t = length ? Math.max(0, Math.min(1, -(a[0] * dx + a[1] * dy) / length)) : 0;
+    best = Math.min(best, Math.hypot(a[0] + t * dx, a[1] + t * dy));
+  }
+  return best;
+}
+
+// The point of either line furthest from the other, and that distance.
+function furthest(a, b) {
+  let worst = { d: 0, loc: a[0] };
+  for (const [from, to] of [
+    [a, b],
+    [b, a],
+  ])
+    for (const loc of from) {
+      const d = distanceToLine(loc, to);
+      if (d > worst.d) worst = { d, loc };
+    }
+  return worst;
+}
+
+const rounded = (loc) => loc.map((v) => Math.round(v * 1e7) / 1e7);
+
+async function snapshots(ids, accept) {
+  const stored = fs.existsSync(SNAPSHOTS) ? JSON.parse(fs.readFileSync(SNAPSHOTS, 'utf8')) : {};
+  const outDir = path.join(DIR, 'check');
+  if (!accept) {
+    fs.rmSync(outDir, { recursive: true, force: true });
+    fs.mkdirSync(outDir, { recursive: true });
+  }
+  let changes = 0;
+  for (const { id, name } of ids.length ? ids.map((id) => ({ id })) : labWays()) {
+    const label = `${id}${name ? ` (${name})` : ''}`;
+    let run;
+    try {
+      run = await slide(id, activity);
+    } catch (error) {
+      console.log(`ERROR    ${label}: ${error.tiles ? 'heatmap tiles missing, open it in the lab page once' : error.message}`);
+      changes++;
+      continue;
+    }
+    const current = {
+      original: run.original.map(rounded),
+      result: run.result.map((p) => rounded(p.loc)),
+      skipped: run.stats.skipped,
+      alongOther: run.stats.alongOther,
+    };
+    if (accept) {
+      stored[id] = current;
+      console.log(`accepted ${label}: ${current.result.length} points, ${current.skipped} left as drawn`);
+      continue;
+    }
+    const before = stored[id];
+    if (!before) {
+      console.log(`NEW      ${label}: no snapshot yet (slide-lab:accept to record it)`);
+      changes++;
+      continue;
+    }
+    if (JSON.stringify(before.original) !== JSON.stringify(current.original)) {
+      console.log(`EDITED   ${label}: the OSM way changed since its snapshot (slide-lab:accept to refresh)`);
+      changes++;
+      continue;
+    }
+    const worst = furthest(before.result, current.result);
+    const notes = [];
+    if (worst.d > CHANGE_METERS) notes.push(`moved up to ${worst.d.toFixed(1)} m`);
+    if (before.skipped !== current.skipped)
+      notes.push(`left as drawn ${before.skipped} → ${current.skipped}`);
+    if (before.alongOther !== current.alongOther)
+      notes.push(`along other ${before.alongOther} → ${current.alongOther}`);
+    if (!notes.length) {
+      console.log(`ok       ${label}`);
+      continue;
+    }
+    changes++;
+    // Whole way, and a close-up where it moved most: accepted in cyan, new in lime.
+    const shown = { ...run, previous: before.result };
+    const all = [...run.original, ...before.result, ...current.result];
+    const lons = all.map((l) => l[0]),
+      lats = all.map((l) => l[1]);
+    const view = (bbox, width) => {
+      const kx = Math.cos((lats[0] * Math.PI) / 180);
+      const height = Math.round((width * (bbox[3] - bbox[1])) / ((bbox[2] - bbox[0]) * kx));
+      return renderView(shown, bbox, width, Math.max(64, Math.min(1400, height)));
+    };
+    const pad = 0.0002;
+    const files = [path.join(outDir, `${id}.png`), path.join(outDir, `${id}-closeup.png`)];
+    fs.writeFileSync(
+      files[0],
+      view([Math.min(...lons) - pad, Math.min(...lats) - pad, Math.max(...lons) + pad, Math.max(...lats) + pad], 1200)
+    );
+    const c = worst.loc,
+      r = 0.00035;
+    fs.writeFileSync(files[1], view([c[0] - r * 1.25, c[1] - r, c[0] + r * 1.25, c[1] + r], 700));
+    console.log(`CHANGED  ${label}: ${notes.join(', ')}\n         ${files.join('\n         ')}`);
+  }
+  if (accept) {
+    fs.writeFileSync(SNAPSHOTS, JSON.stringify(stored, null, 1) + '\n');
+    console.log(`Snapshots saved to ${SNAPSHOTS}`);
+  } else {
+    console.log(changes ? `${changes} way(s) differ from their snapshot.` : 'All ways match their snapshot.');
+    process.exitCode = changes ? 1 : 0;
+  }
 }
 
 // --- CLI and web page ------------------------------------------------------------
@@ -523,6 +657,8 @@ const main = import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (!main) {
   // Nothing to run.
+} else if (args.includes('--check') || args.includes('--accept')) {
+  await snapshots(wayIds, args.includes('--accept'));
 } else if (wayIds.length) {
   fs.mkdirSync(path.join(DIR, 'out'), { recursive: true });
   for (const id of wayIds) {

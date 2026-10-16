@@ -6,7 +6,9 @@
     "build": "node scripts/build.js",
     "palettes": "node scripts/palettes.js",
     "test": "node --test tests/*.test.mjs",
-    "slide-lab": "node scripts/slide-lab.mjs"
+    "slide-lab": "node scripts/slide-lab.mjs",
+    "slide-lab:check": "node scripts/slide-lab.mjs --check",
+    "slide-lab:accept": "node scripts/slide-lab.mjs --accept"
   },
   "author": "Julien Etienne <etienne.julien@gmail.com>",
   "license": "MIT",

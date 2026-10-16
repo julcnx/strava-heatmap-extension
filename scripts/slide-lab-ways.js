@@ -2,6 +2,13 @@
 // scripts/slide-lab.mjs when the page saves its list.
 window.SLIDE_LAB_WAYS = [
  {
+  "id": "436169752",
+  "name": "path",
+  "tags": [
+   "fixed"
+  ]
+ },
+ {
   "id": "36964415",
   "name": "Bibbulmun Track",
   "tags": [
@@ -18,13 +25,16 @@ window.SLIDE_LAB_WAYS = [
  {
   "id": "260860803",
   "name": "track",
-  "tags": []
+  "tags": [
+   "wontfix"
+  ]
  },
  {
   "id": "1568171469",
   "name": "path",
   "tags": [
-   "end"
+   "end",
+   "wobbly"
   ]
  },
  {
@@ -40,7 +50,8 @@ window.SLIDE_LAB_WAYS = [
   "tags": [
    "jump",
    "parallel",
-   "wontfix"
+   "wontfix",
+   "faint"
   ]
  },
  {

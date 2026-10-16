@@ -29,6 +29,7 @@ import zlib from 'node:zlib';
 import {
   createHeatmapRaster,
   project,
+  sampleDensity,
   SLIDE_DEFAULTS,
   slideLine,
   slideLineTwice,
@@ -165,6 +166,7 @@ class Graph {
       } else if (e.type === 'relation') {
         for (const m of e.members) {
           if (m.type === 'node') (this.relationParents[`n${m.ref}`] ||= []).push(e);
+          if (m.type === 'way') (this.relationParents[`w${m.ref}`] ||= []).push(e);
         }
       }
     }
@@ -278,12 +280,43 @@ export async function slide(wayId, activity, { moveEnds = false, once = false } 
       ? [{ from: locations[p.nodeIndex], to: p.loc }]
       : []
   );
+  // Why each fixed vertex stays, for the page's tooltips (the rules of
+  // fixedIndices in action.js, and index.js keeping the line's ends).
+  const name = (e) =>
+    e.tags.name ||
+    ['highway', 'waterway', 'railway', 'man_made', 'natural', 'landuse', 'boundary', 'barrier', 'type']
+      .filter((k) => e.tags[k])
+      .map((k) => `${k}=${e.tags[k]}`)[0] ||
+    'untagged';
+  const fixedWhy = Object.fromEntries(
+    fixed.map((i) => {
+      const node = selection.nodes[i];
+      const why = [];
+      if (i === 0 || i === last) why.push('Line end: ends stay in place for now');
+      const tags = Object.entries(node.tags).map(([k, v]) => `${k}=${v}`);
+      if (tags.length) why.push(`Tagged node: ${tags.join(', ')}`);
+      // An untagged way takes its meaning from its relations (a boundary, an
+      // area's outer ring).
+      const label = (w) =>
+        Object.keys(w.tags).length || !graph.parentRelations(w).length
+          ? name(w)
+          : `edge of ${graph.parentRelations(w).map((r) => `${r.tags.boundary || r.tags.type} ${r.tags.name || name(r)}`).join(' / ')}`;
+      const ways = graph.parentWays(node).filter((w) => w.id !== selection.way.id);
+      if (ways.length)
+        why.push(`Junction with ${ways.map((w) => `${label(w)} (${w.id.slice(1)})`).join(', ')}`);
+      const relations = graph.parentRelations(node);
+      if (relations.length)
+        why.push(`Member of ${relations.map((r) => `${name(r)} (relation ${r.id})`).join(', ')}`);
+      return [i, why];
+    })
+  );
   return {
     wayId,
     activity,
     tags: selection.way.tags,
     original: locations,
     fixed,
+    fixedWhy,
     result: cleaned.map((p) => ({ loc: p.loc, nodeIndex: p.nodeIndex })),
     movedJunctions,
     raw: result.map((p) => ({ loc: p.loc, nodeIndex: p.nodeIndex })),
@@ -384,6 +417,101 @@ export function render(run) {
   return encodePNG(width, height, rgb);
 }
 
+// The page's current view, drawn like the page (orange heat on black, the
+// same line colours), for Shift+S screenshots: the page cannot read back the
+// Strava tiles it shows. `bbox` is [west, south, east, north].
+const ORANGE = Buffer.from(PALETTES.orange, 'hex');
+// A 5×7 pixel font, just enough to label a screenshot with its way.
+const GLYPHS = {
+  0: '01110100011001110101110011000101110',
+  1: '00100011000010000100001000010001110',
+  2: '01110100010000100010001000100011111',
+  3: '11110000010000101110000010000111110',
+  4: '00010001100101010010111110001000010',
+  5: '11111100001111000001000011000101110',
+  6: '00110010001000011110100011000101110',
+  7: '11111000010001000100010000100001000',
+  8: '01110100011000101110100011000101110',
+  9: '01110100011000101111000010001001100',
+  w: '00000000001000110001101011010101010',
+  a: '00000000000111000001011111000101111',
+  y: '00000000001000110001011110000101110',
+  ' ': '00000000000000000000000000000000000',
+};
+function label(rgb, width, height, text, size) {
+  const pad = 2 * size,
+    boxW = text.length * 6 * size + pad * 2 - size,
+    boxH = 7 * size + pad * 2;
+  for (let y = 0; y < Math.min(boxH, height); y++)
+    for (let x = 0; x < Math.min(boxW, width); x++) rgb.fill(0, (y * width + x) * 3, (y * width + x) * 3 + 3);
+  [...text].forEach((c, i) => {
+    const glyph = GLYPHS[c] || GLYPHS[' '];
+    for (let gy = 0; gy < 7; gy++)
+      for (let gx = 0; gx < 5; gx++) {
+        if (glyph[gy * 5 + gx] !== '1') continue;
+        for (let dy = 0; dy < size; dy++)
+          for (let dx = 0; dx < size; dx++) {
+            const x = pad + (i * 6 + gx) * size + dx,
+              y = pad + gy * size + dy;
+            if (x < width && y < height) rgb.fill(255, (y * width + x) * 3, (y * width + x) * 3 + 3);
+          }
+      }
+  });
+}
+export function renderView(run, bbox, width, height) {
+  const { raster } = run;
+  const [x0, y0] = project([bbox[0], bbox[3]], raster.zoom),
+    [x1, y1] = project([bbox[2], bbox[1]], raster.zoom);
+  const toPx = (loc) => {
+    const p = project(loc, raster.zoom);
+    return [((p[0] - x0) / (x1 - x0)) * width, ((p[1] - y0) / (y1 - y0)) * height];
+  };
+  const rgb = Buffer.alloc(width * height * 3);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const p = [x0 + ((x + 0.5) / width) * (x1 - x0), y0 + ((y + 0.5) / height) * (y1 - y0)];
+      const inside =
+        p[0] >= raster.x && p[1] >= raster.y && p[0] < raster.x + raster.width - 1 && p[1] < raster.y + raster.height - 1;
+      if (!inside) continue;
+      const k = Math.max(0, Math.min(255, Math.round(255 * sampleDensity(raster, p)))) * 4;
+      const alpha = ORANGE[k + 3] / 255;
+      const o = (y * width + x) * 3;
+      for (let c = 0; c < 3; c++) rgb[o + c] = Math.round(ORANGE[k + c] * alpha);
+    }
+  }
+  const dot = (cx, cy, r, color, ring = 0) => {
+    for (let y = Math.floor(cy - r); y <= cy + r; y++)
+      for (let x = Math.floor(cx - r); x <= cx + r; x++) {
+        const d2 = (x - cx) ** 2 + (y - cy) ** 2;
+        if (x >= 0 && y >= 0 && x < width && y < height && d2 <= r * r && (!ring || d2 >= (r - ring) ** 2))
+          rgb.set(color, (y * width + x) * 3);
+      }
+  };
+  const line = (locs, color, r, dash = 0) => {
+    let along = 0;
+    for (let i = 1; i < locs.length; i++) {
+      const [ax, ay] = toPx(locs[i - 1]),
+        [bx, by] = toPx(locs[i]);
+      const steps = Math.ceil(Math.hypot(bx - ax, by - ay));
+      for (let s = 0; s <= steps; s++, along++)
+        if (!dash || along % (2 * dash) < dash)
+          dot(ax + ((bx - ax) * s) / steps, ay + ((by - ay) * s) / steps, r, color);
+    }
+  };
+  for (const other of run.others) line(other.locs, [61, 139, 255], 1, 6);
+  line(run.original, [255, 60, 240], 1.5);
+  for (const loc of run.original) dot(...toPx(loc), 5, [255, 60, 240], 1.5);
+  line(run.result.map((p) => p.loc), [125, 255, 58], 1.5);
+  for (const p of run.result) dot(...toPx(p.loc), 5, [125, 255, 58], 1.5);
+  for (const i of run.fixed) dot(...toPx(run.original[i]), 9, [255, 255, 255], 2.5);
+  for (const { from, to } of run.movedJunctions) {
+    line([from, to], [255, 220, 0], 1.5);
+    dot(...toPx(to), 9, [255, 220, 0], 2.5);
+  }
+  label(rgb, width, height, `way ${run.wayId}`, Math.max(2, Math.round(width / 600)));
+  return encodePNG(width, height, rgb);
+}
+
 // --- CLI and web page ------------------------------------------------------------
 
 const args = process.argv.slice(2);
@@ -477,6 +605,27 @@ if (!main) {
           saveTile(m[1], ...m.slice(2).map(Number), bytes.length ? bytes : null);
           res.writeHead(204);
           res.end();
+        } else if ((m = url.pathname.match(/^\/shot\/(\d+)\.png$/))) {
+          // Shift+S on the page: the current view as a PNG, also saved to a
+          // file (its path in the X-File header).
+          const run = await slide(m[1], url.searchParams.get('activity') || 'all', {
+            moveEnds: url.searchParams.get('moveEnds') === '1',
+          });
+          const bbox = url.searchParams.get('bbox').split(',').map(Number);
+          const [width, height] = ['w', 'h'].map((k) =>
+            Math.max(64, Math.min(2400, Math.round(+url.searchParams.get(k))))
+          );
+          const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+          const file = path.join(DIR, 'shots', `${m[1]}-${stamp}.png`);
+          fs.mkdirSync(path.dirname(file), { recursive: true });
+          const png = renderView(run, bbox, width, height);
+          fs.writeFileSync(file, png);
+          res.writeHead(200, {
+            'Content-Type': 'image/png',
+            'X-File': file,
+            'Access-Control-Expose-Headers': 'X-File',
+          });
+          res.end(png);
         } else if ((m = url.pathname.match(/^\/slide\/(\d+)\.(json|png)$/))) {
           const run = await slide(m[1], url.searchParams.get('activity') || 'all', {
             moveEnds: url.searchParams.get('moveEnds') === '1',

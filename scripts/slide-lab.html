@@ -52,7 +52,7 @@
 <div id="map"></div>
 <div id="loading"><div id="loadingText"></div></div>
 <aside id="list"><button id="add" disabled>+ Add current way</button>
-  <select id="show"><option value="open">Not fixed</option><option value="fixed">Fixed</option><option value="all">All</option></select><div id="filters"></div><div id="items"></div></aside>
+  <select id="show"><option value="open">Not fixed</option><option value="fixed">Fixed</option><option value="wontfix">Won't fix</option><option value="all">All</option></select><div id="filters"></div><div id="items"></div></aside>
 <script>
 const map = L.map('map', { maxZoom: 20 }).setView([36.757, -4.395], 16);
 const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19, className: 'base', attribution: 'Esri World Imagery' });
@@ -70,6 +70,8 @@ fetch(API + '/palettes.json').then((r) => r.json()).then((palettes) => {
     '</feComponentTransfer></filter></svg>');
 });
 let heat, layers = L.layerGroup().addTo(map), area = L.layerGroup().addTo(map);
+// Fixed vertices above the other ways' hover lines, so their tooltip wins.
+map.createPane('fixed').style.zIndex = 610;
 const $ = (id) => document.getElementById(id);
 const tileURL = (activity, z, x, y) => 'https://content-a.strava.com/identified/globalheat/' + activity + '/grayscale/' + z + '/' + x + '/' + y + '.png?v=20&missing=empty';
 const ll = (loc) => [loc[1], loc[0]];
@@ -87,6 +89,15 @@ function saveURL() {
 // Roads and paths in view, from the OSM API: click one to slide it. Loaded
 // once per zoom-16 tile, like iD, so panning and zooming reuse what is loaded.
 const loadedTiles = new Set(), drawnWays = new Set();
+// Hover-and-click twins by way ID. The slid way has none, so its own markers
+// (fixed vertices) get the hover.
+const twins = new Map();
+let slidWay = null;
+function setSlidWay(id) {
+  if (slidWay && twins.has(slidWay)) twins.get(slidWay).addTo(area);
+  slidWay = id;
+  twins.get(id)?.remove();
+}
 async function loadArea() {
   saveURL();
   if (map.getZoom() < 15) return;
@@ -111,12 +122,13 @@ function drawWays(ways) {
     drawnWays.add(o.id);
     const shown = L.polyline(o.locs.map(ll), { color: '#3d8bff', weight: 1, opacity: 0.45, dashArray: '4 4' }).addTo(area);
     // Wide invisible twin, easier to hover and click.
-    L.polyline(o.locs.map(ll), { opacity: 0, weight: 12 })
+    const twin = L.polyline(o.locs.map(ll), { opacity: 0, weight: 12 })
       .bindTooltip(o.label + ' · ' + o.id, { sticky: true })
       .on('mouseover', () => shown.setStyle({ weight: 3, opacity: 0.9 }))
       .on('mouseout', () => shown.setStyle({ weight: 1, opacity: 0.45 }))
-      .on('click', () => { $('way').value = o.id; run().catch(fail); })
-      .addTo(area);
+      .on('click', () => { $('way').value = o.id; run().catch(fail); });
+    twins.set(String(o.id), twin);
+    if (String(o.id) !== slidWay) twin.addTo(area);
   }
 }
 const fail = (err) => $('status').textContent = err.message;
@@ -124,8 +136,10 @@ const fail = (err) => $('status').textContent = err.message;
 // slide-lab-ways.js by the server, so they can be re-run from the command line.
 // "Fixed" is the checkbox in front of each way (stored as the `fixed` tag),
 // not a chip; the list shows the ways not fixed yet unless asked otherwise.
-const TAGS = ['jump', 'parallel', 'junction', 'switchback', 'faint', 'end', 'wobbly', 'ok'];
-const GOOD = ['ok'];
+// A way tagged `wontfix` is neither fixed nor not fixed: it only shows under
+// "Won't fix".
+const TAGS = ['jump', 'parallel', 'junction', 'switchback', 'faint', 'end', 'wobbly', 'ok', 'wontfix'];
+const GOOD = ['ok', 'wontfix'];
 let ways = [], filter = null;
 try { $('show').value = localStorage.getItem('slideLab.show') || 'open'; } catch {}
 $('show').onchange = () => {
@@ -133,7 +147,8 @@ $('show').onchange = () => {
   renderList();
 };
 const isFixed = (w) => w.tags.includes('fixed');
-const shown = () => ways.filter((w) => $('show').value === 'all' || isFixed(w) === ($('show').value === 'fixed'));
+const status = (w) => (w.tags.includes('wontfix') ? 'wontfix' : isFixed(w) ? 'fixed' : 'open');
+const shown = () => ways.filter((w) => $('show').value === 'all' || status(w) === $('show').value);
 try { ways = JSON.parse(localStorage.getItem('slideLab.ways')) || []; } catch {}
 // Ways from the file that this browser does not know yet.
 for (const w of window.SLIDE_LAB_WAYS || []) if (!ways.some((v) => v.id === w.id)) ways.push(w);
@@ -159,11 +174,11 @@ const chip = (tag, on, onclick) => {
 function renderList() {
   $('add').disabled = !current || ways.some((w) => w.id === current.id);
   const list = shown();
-  const used = [...new Set([...TAGS, ...ways.flatMap((w) => w.tags)])].filter((tag) => tag !== 'fixed');
+  const used = [...new Set([...TAGS, ...ways.flatMap((w) => w.tags)])].filter((tag) => tag !== 'fixed' && tag !== 'wontfix');
   $('filters').replaceChildren(...used.map((tag) => chip(tag + ' ' + list.filter((w) => w.tags.includes(tag)).length, filter === tag, () => { filter = filter === tag ? null : tag; renderList(); })));
   $('items').replaceChildren(...list.filter((w) => !filter || w.tags.includes(filter)).map((w) => {
     const item = document.createElement('div');
-    item.className = 'item' + (w.id === $('way').value.trim() ? ' current' : '') + (isFixed(w) ? ' done' : '');
+    item.className = 'item' + (w.id === $('way').value.trim() ? ' current' : '') + (status(w) !== 'open' ? ' done' : '');
     item.innerHTML = '<div class="head"><input type="checkbox" title="Fixed"><b></b><span></span><button title="Forget">×</button></div><div class="chips"></div>';
     item.querySelector('b').textContent = w.id;
     item.querySelector('span').textContent = w.name || '';
@@ -183,6 +198,33 @@ function renderList() {
   }));
 }
 renderList();
+// Shift+S: the server draws the current view as a PNG (the page cannot read
+// back Strava's tiles) and saves it too; the image goes to the clipboard, with
+// the way, link and file path as its text.
+document.addEventListener('keydown', (e) => {
+  if (!e.shiftKey || e.key !== 'S' || e.metaKey || e.ctrlKey || ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  const way = $('way').value.trim();
+  if (!way) return;
+  e.preventDefault();
+  const b = map.getBounds(), size = map.getSize(), ratio = Math.min(2, window.devicePixelRatio || 1);
+  const params = new URLSearchParams({ activity: $('activity').value, bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(','), w: size.x * ratio, h: size.y * ratio });
+  if ($('moveEnds').checked) params.set('moveEnds', '1');
+  $('status').textContent = 'Taking screenshot…';
+  const shot = fetch(API + '/shot/' + way + '.png?' + params).then((response) => {
+    if (!response.ok) throw new Error('Screenshot failed (' + response.status + ')');
+    return response;
+  });
+  const text = shot.then((response) => 'way ' + way + ' · ' + location.href + ' · ' + response.headers.get('X-File'));
+  // The clipboard write starts now, inside the key press, with the image
+  // still loading: browsers only allow it during the user's gesture.
+  navigator.clipboard
+    .write([new ClipboardItem({
+      'image/png': shot.then((response) => response.clone().blob()),
+      'text/plain': text.then((t) => new Blob([t], { type: 'text/plain' })),
+    })])
+    .then(async () => { $('status').textContent = 'Screenshot copied · ' + (await text); })
+    .catch(async (err) => { $('status').textContent = 'Not copied (' + err.message + '): ' + (await text.catch(() => '')); });
+});
 function loading(text) {
   $('loading').classList.toggle('on', Boolean(text));
   $('loadingText').textContent = text || '';
@@ -202,6 +244,7 @@ async function run() {
 }
 async function slide(way, activity) {
   layers.clearLayers();
+  setSlidWay(String(way));
   let data;
   // The server lists the Strava tiles it lacks: fetch them here, where the
   // extension adds the Strava cookies, upload them, and try again.
@@ -224,7 +267,10 @@ async function slide(way, activity) {
   data.original.forEach((loc) => L.circleMarker(ll(loc), { radius: 3, color: '#ff3cf0', weight: 1 }).addTo(layers));
   L.polyline(data.result.map((p) => ll(p.loc)), { color: '#7dff3a', weight: 2, interactive: false }).addTo(layers);
   data.result.forEach((p) => L.circleMarker(ll(p.loc), { radius: 3, color: '#7dff3a', weight: 1 }).addTo(layers));
-  data.fixed.forEach((i) => L.circleMarker(ll(data.original[i]), { radius: 5, color: '#ffffff', weight: 2, fill: false }).addTo(layers));
+  // Fixed vertices: hover for why they stay (tags, junctions, relations, ends).
+  data.fixed.forEach((i) => L.circleMarker(ll(data.original[i]), { pane: 'fixed', radius: 5, color: '#ffffff', weight: 2, fill: true, fillOpacity: 0 })
+    .bindTooltip(['<b>Fixed vertex ' + i + '</b>', ...(data.fixedWhy?.[i] || [])].map((line) => line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/&lt;(\/?)b>/g, '<$1b>')).join('<br>'))
+    .addTo(layers));
   // Junction ends that moved ("Move ends"): the connected ways would bend with them.
   for (const { from, to } of data.movedJunctions) {
     L.polyline([ll(from), ll(to)], { color: '#ffdc00', weight: 2, dashArray: '3 3', interactive: false }).addTo(layers);

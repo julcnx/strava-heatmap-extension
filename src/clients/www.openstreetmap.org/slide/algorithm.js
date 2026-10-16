@@ -1105,7 +1105,7 @@ export async function slideLine(locations, raster, options = {}) {
   const fixed = new Set(options.fixedIndices || []);
   const limited = new Set(options.limitedIndices || []);
   const snapSearches = searchRadii(snapRadius, maxSnapMeters / scale);
-  const align = SLIDE_DEFAULTS.alignMeters / scale;
+  const align = (options.alignMeters ?? SLIDE_DEFAULTS.alignMeters) / scale;
   // Bends of the drawing (see HOLD_TURN_DEGREES): +1 or -1 by turn side.
   const bends = originals.map((p, i) => {
     if (i === 0 || i === originals.length - 1) return 0;
@@ -1121,10 +1121,25 @@ export async function slideLine(locations, raster, options = {}) {
         HOLD_TURN_DEGREES;
     return sharp ? Math.sign(u[0] * v[1] - u[1] * v[0]) : 0;
   });
+  // Only the mapper's drawing has bends to hold: in slideLineTwice's second
+  // pass the "drawing" is the first pass's trace, whose small kinks are not
+  // switchbacks (the ones the first pass held arrive fixed).
+  // Two opposite bends joined by one short leg between long ones are a jog
+  // of the drawing across the trail, not switchbacks: not held.
+  const leg = (a) => Math.hypot(originals[a + 1][0] - originals[a][0], originals[a + 1][1] - originals[a][1]) * scale;
+  const jog = (a, b) =>
+    b === a + 1 &&
+    a > 0 &&
+    b < originals.length - 1 &&
+    leg(a - 1) >= HOLD_LEG_METERS &&
+    leg(b) >= HOLD_LEG_METERS;
   const holds = bends.map(
     (side, i) =>
+      options.holdBends !== false &&
       side !== 0 &&
-      [i - 2, i - 1, i + 1, i + 2].some((j) => bends[j] && bends[j] === -side)
+      [i - 2, i - 1, i + 1, i + 2].some(
+        (j) => bends[j] && bends[j] === -side && !jog(Math.min(i, j), Math.max(i, j))
+      )
   );
   // Unit normal of the drawn line at each vertex (from its neighbours), the
   // only direction a vertex already on a trail moves in.
@@ -1310,6 +1325,44 @@ export async function slideLine(locations, raster, options = {}) {
       }
     }
   }
+  // A free vertex snapped off the trail (e.g. onto the inner flank of a bend)
+  // makes a spike: the trace runs out to it and back along itself. Cut the
+  // folded part off both sections and move the vertex to where the fold
+  // starts. A bend traced from the heat is rounded, its legs never overlap.
+  const pointAt = (path, distance, backwards) => {
+    const points = backwards ? path.slice().reverse() : path;
+    let along = 0;
+    for (let k = 1; k < points.length; k++) {
+      const step = Math.hypot(points[k][0] - points[k - 1][0], points[k][1] - points[k - 1][1]);
+      if (along + step >= distance) {
+        const t = step ? (distance - along) / step : 0;
+        const p = [
+          points[k - 1][0] + (points[k][0] - points[k - 1][0]) * t,
+          points[k - 1][1] + (points[k][1] - points[k - 1][1]) * t,
+        ];
+        return { p, k: backwards ? points.length - 1 - k : k };
+      }
+      along += step;
+    }
+    return null;
+  };
+  for (let i = 1; i < originals.length - 1; i++) {
+    // A held bend of the drawing (a switchback) is a fold on purpose.
+    if (fixed.has(i) || unsnapped.has(i) || holds[i] || !paths[i] || !paths[i + 1]) continue;
+    let fold = null;
+    for (let d = 0.5; d <= FOLD_MAX_METERS / scale; d += 0.5) {
+      const a = pointAt(paths[i], d, true),
+        b = pointAt(paths[i + 1], d, false);
+      if (!a || !b) break;
+      if (Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1]) > FOLD_GAP * d) break;
+      fold = { d, a, b };
+    }
+    if (!fold || fold.d * scale < FOLD_MIN_METERS) continue;
+    const middle = [(fold.a.p[0] + fold.b.p[0]) / 2, (fold.a.p[1] + fold.b.p[1]) / 2];
+    paths[i] = [...paths[i].slice(0, fold.a.k), middle];
+    paths[i + 1] = [middle, ...paths[i + 1].slice(fold.b.k)];
+    anchors[i] = middle;
+  }
   // A section touching a vertex left off-trail is drawn straight too: tracing
   // into the dark only wanders.
   const traced = paths.map(
@@ -1419,12 +1472,71 @@ export async function slideLine(locations, raster, options = {}) {
 // Slide twice: a second pass over the first result (now densely on the trail)
 // smooths most remaining kinks. Protected vertices stay fixed in both passes,
 // and second-pass indices are mapped back to the caller's original vertices.
+const SECOND_PASS_ALIGN_METERS = 2;
+// See slideLineTwice: free vertices left as drawn this close to a junction.
+const JUNCTION_STUB_METERS = 25;
+function junctionStubs(first, locations, fixed, otherWays) {
+  const stubs = new Set();
+  const record = new Map(first.flatMap((r, k) => (r.nodeIndex === null ? [] : [[r.nodeIndex, { ...r, k }]])));
+  const meters = (a, b) =>
+    Math.hypot((b[0] - a[0]) * Math.cos((a[1] * Math.PI) / 180), b[1] - a[1]) * 111320;
+  const isJunction = (loc) => otherWays.some((way) => way.some((o) => o[0] === loc[0] && o[1] === loc[1]));
+  for (const j of fixed) {
+    if (!isJunction(locations[j])) continue;
+    for (const step of [-1, 1]) {
+      const run = [];
+      let k = j + step;
+      for (; k >= 0 && k < locations.length; k += step) {
+        const r = record.get(k);
+        // The section between k and the previous vertex was left as drawn.
+        const section = record.get(Math.max(k, k - step));
+        if (!r || !r.drawn || fixed.has(k) || !section?.untraced) break;
+        if (meters(locations[j], locations[k]) > JUNCTION_STUB_METERS) break;
+        run.push(k);
+      }
+      // ...and the line goes on along its trail after them.
+      const next = record.get(k);
+      if (run.length && next && !next.drawn) run.forEach((i) => stubs.add(i));
+    }
+  }
+  return stubs;
+}
+// A spike (see slideLine): the sections into and out of a vertex run back
+// along each other, closer than FOLD_GAP × the distance from the vertex, for
+// at least FOLD_MIN_METERS (looking up to FOLD_MAX_METERS).
+const FOLD_GAP = 0.35;
+const FOLD_MIN_METERS = 2;
+const FOLD_MAX_METERS = 15;
 export async function slideLineTwice(locations, raster, options = {}) {
   const half = (offset) => (value) => options.onProgress?.(offset + value / 2);
-  const first = await slideLine(locations, raster, { ...options, onProgress: half(0) });
+  let first = await slideLine(locations, raster, { ...options, onProgress: half(0) });
   if (first.length > 1000) return first;
   const fixed = new Set(options.fixedIndices || []);
   const limited = new Set(options.limitedIndices || []);
+  // Drawn points next to a junction that found no trail, while the line
+  // further on is on it: near the other way its heat is masked, so they are
+  // the drawing's approach to the junction, not a part without heat. Drop
+  // them and slide again, so the trail is traced into the junction.
+  const stubs = junctionStubs(first, locations, fixed, options.otherWays || []);
+  if (stubs.size) {
+    const kept = locations.flatMap((_, i) => (stubs.has(i) ? [] : [i]));
+    const position = new Map(kept.map((i, k) => [i, k]));
+    const remap = (indices) => (indices || []).flatMap((i) => (position.has(i) ? [position.get(i)] : []));
+    const again = await slideLine(
+      kept.map((i) => locations[i]),
+      raster,
+      {
+        ...options,
+        fixedIndices: remap(options.fixedIndices),
+        limitedIndices: remap(options.limitedIndices),
+        onProgress: half(0),
+      }
+    );
+    first = Object.assign(
+      again.map((record) => ({ ...record, nodeIndex: record.nodeIndex === null ? null : kept[record.nodeIndex] })),
+      { skipped: again.skipped }
+    );
+  }
   // What the first pass left as drawn stays as drawn: its vertices are fixed
   // and its sections are not traced again (no points are added there).
   const second = await slideLine(
@@ -1436,6 +1548,11 @@ export async function slideLineTwice(locations, raster, options = {}) {
         fixed.has(record.nodeIndex) || record.drawn ? [i] : []
       ),
       untracedSections: first.flatMap((record, i) => (record.untraced ? [i] : [])),
+      holdBends: false,
+      // Its vertices are already on the trail: re-centre them a little, never
+      // climb to another part of the band (on a tight bend, the normal from
+      // the first pass's dense points can point anywhere).
+      alignMeters: SECOND_PASS_ALIGN_METERS,
       limitedIndices: first.flatMap((record, i) =>
         limited.has(record.nodeIndex) ? [i] : []
       ),

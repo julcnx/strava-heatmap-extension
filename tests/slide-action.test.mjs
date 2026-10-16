@@ -255,6 +255,33 @@ test('junctions and endpoints are never deleted; untagged duplicates are', () =>
   assert.ok(after.hasEntity('a') && after.hasEntity('c'));
 });
 
+test('tagged nodes and relation members are never deleted, even as duplicates', () => {
+  // A Slide-created point 1 m from b: a near-duplicate pair, where cleanup
+  // drops one. Tagged, or a relation member, b is the one that stays.
+  const result = [
+    { loc: at(0, 0), nodeIndex: 0 },
+    { loc: at(54, 33), nodeIndex: null },
+    { loc: at(55, 33), nodeIndex: 1 },
+    { loc: at(110, 33), nodeIndex: 2 },
+  ];
+  const plain = junctionCase();
+  const tagged = new Graph({ ...plain.graph.entities, b: new Node('b', at(55, 33), { barrier: 'gate' }) });
+  const member = new Graph(plain.graph.entities, { b: [{ id: 'r' }] });
+  for (const graph of [tagged, member]) {
+    const selection = { ...plain.selection, nodes: ['a', 'b', 'c'].map((id) => graph.entity(id)) };
+    const kept = cleanSlideResult(graph, selection, result);
+    assert.ok(kept.some((p) => p.nodeIndex === 1), 'protected b dropped by cleanup');
+    const after = createSlideAction(graph, selection, result, factory)(graph);
+    assert.ok(after.hasEntity('b'));
+    assert.deepEqual(after.entity('w').nodes, ['a', 'b', 'c']);
+    // A result that leaves b out is refused outright.
+    assert.throws(
+      () => createSlideAction(graph, selection, [result[0], result[1], result[3]], factory),
+      /Invalid Slide result/
+    );
+  }
+});
+
 test('closed lines can be slid; the closing node moves as one', () => {
   const nodes = {
     p: new Node('p', at(0, 0)),

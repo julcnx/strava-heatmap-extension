@@ -621,7 +621,11 @@ const HOLD_LEG_METERS = 12;
 // ... and only while it swings at most this far from the band's ridge: a
 // wider zigzag would show in the heat.
 const HOLD_MAX_OFFSET_METERS = 4;
-function snap(raster, point, radius, normal, align = radius, hold = 0) {
+// How far a vertex at a bend of the drawing may centre towards the bend's
+// outside (`outward`, the sign of `normal` pointing there): `alignOut` pixels
+// instead of `align`.
+const BEND_ALIGN_METERS = 10;
+function snap(raster, point, radius, normal, align = radius, hold = 0, outward = 0, alignOut = align) {
   const zone = (p) => {
     if (!raster.near) return 0;
     const x = Math.round(p[0]) - raster.x,
@@ -642,7 +646,8 @@ function snap(raster, point, radius, normal, align = radius, hold = 0) {
         const next = distance + 0.5;
         const p = [point[0] + sign * normal[0] * next, point[1] + sign * normal[1] * next];
         const sample = sampleDensity(raster, p);
-        if (sample <= value || next > Math.min(radius, align) || (!startsNear && near(p)))
+        const limit = sign === outward ? alignOut : align;
+        if (sample <= value || next > Math.min(radius, limit) || (!startsNear && near(p)))
           break;
         distance = next;
         value = sample;
@@ -1167,6 +1172,16 @@ export async function slideLine(locations, raster, options = {}) {
     const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
     return length ? [-(b[1] - a[1]) / length, (b[0] - a[0]) / length] : null;
   });
+  // The outside of each bend of the drawing that is not held: the sign of the
+  // normal pointing away from its neighbours' midpoint, else 0. The drawing
+  // often cuts a hairpin's corner by more than alignMeters: such a vertex
+  // centres outwards up to BEND_ALIGN_METERS (see snap).
+  const outwards = originals.map((p, i) => {
+    if (!bends[i] || holds[i] || !normals[i]) return 0;
+    const [a, b] = [originals[i - 1], originals[i + 1]];
+    const dot = (p[0] - (a[0] + b[0]) / 2) * normals[i][0] + (p[1] - (a[1] + b[1]) / 2) * normals[i][1];
+    return Math.sign(dot);
+  });
   // 2) Snap every vertex to a trail point ("anchor"). Fixed vertices are their
   //    own anchors, so endpoints and junctions never move. Snapping widens
   //    adaptively before giving up, because the drawn line may be far from the
@@ -1186,7 +1201,9 @@ export async function slideLine(locations, raster, options = {}) {
         r,
         normals[i],
         align,
-        holds[i] ? HOLD_MAX_OFFSET_METERS / scale : 0
+        holds[i] ? HOLD_MAX_OFFSET_METERS / scale : 0,
+        outwards[i],
+        Math.max(align, BEND_ALIGN_METERS / scale)
       );
     }
     // The limit is measured from where the vertex was before ANY pass
@@ -1678,7 +1695,9 @@ function keepStable(locations, result) {
 // each sample halfway to its neighbours' average (about SMOOTH_METERS of
 // rounding), with the stretch's ends pinned. If a sample loses more than half
 // of its heat (it left the trail), the stretch is smoothed half as much, up to
-// three times, else left as traced. The curve is then simplified finely
+// three times, else left as traced. Likewise if a sample moves more than
+// SMOOTH_MAX_SHIFT_METERS off the traced line: on a wide band, rounding keeps
+// its heat while cutting a hairpin's apex. The curve is then simplified finely
 // (SMOOTH_TOLERANCE_METERS), so bends get many points and straight parts few;
 // original vertices of the stretch are reused, in order, for the nearest
 // points, so their OSM nodes are kept.
@@ -1686,6 +1705,7 @@ const SMOOTH_STEP_METERS = 1.5;
 const SMOOTH_PASSES = 24;
 const SMOOTH_TOLERANCE_METERS = 0.4;
 const SMOOTH_MIN_HEAT = 0.5;
+const SMOOTH_MAX_SHIFT_METERS = 2;
 function smoothLine(records, raster) {
   const zoom = raster.zoom;
   const scale = metersPerPixel(records[0].loc[1], zoom);
@@ -1702,6 +1722,14 @@ function smoothLine(records, raster) {
     from = to;
   }
   return result;
+}
+
+// Distance from p to the polyline `points`.
+function offLine(p, points) {
+  let best = Infinity;
+  for (let k = 1; k < points.length; k++)
+    best = Math.min(best, distanceToSegment(p, points[k - 1], points[k]));
+  return best;
 }
 
 function smoothRun(run, raster, step, scale) {
@@ -1731,7 +1759,14 @@ function smoothRun(run, raster, step, scale) {
             current[i][axis] / 2 + (current[i - 1][axis] + current[i + 1][axis]) / 4;
       current = next;
     }
-    if (current.every((p, i) => sampleDensity(raster, p) >= heat[i])) smooth = current;
+    if (
+      current.every(
+        (p, i) =>
+          sampleDensity(raster, p) >= heat[i] &&
+          offLine(p, points) <= SMOOTH_MAX_SHIFT_METERS / scale
+      )
+    )
+      smooth = current;
   }
   if (!smooth) return run;
   const keep = simplifyKeep(smooth, SMOOTH_TOLERANCE_METERS / scale, raster);

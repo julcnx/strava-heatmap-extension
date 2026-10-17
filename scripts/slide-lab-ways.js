@@ -19,7 +19,8 @@ window.SLIDE_LAB_WAYS = [
   "id": "36964415",
   "name": "Bibbulmun Track",
   "tags": [
-   "fixed"
+   "fixed",
+   "switchback"
   ]
  },
  {
@@ -169,6 +170,14 @@ window.SLIDE_LAB_WAYS = [
    "switchback",
    "wobbly",
    "jump",
+   "fixed"
+  ]
+ },
+ {
+  "id": "37097733",
+  "name": "Rawnsley Bluff Trail",
+  "tags": [
+   "switchback",
    "fixed"
   ]
  }

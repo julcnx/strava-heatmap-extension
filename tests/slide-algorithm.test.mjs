@@ -36,8 +36,9 @@ function trailTiles(trails) {
         for (let x = 0; x < 512; x++) {
           for (const { centre, peak } of trails) {
             let d = Infinity;
+            // Pixel (x, y) is centred at (x + 0.5, y + 0.5), as createHeatmapRaster reads it.
             for (const p of centre.map((c) => project(at(c), 15)))
-              d = Math.min(d, (p[0] - tx * 512 - x) ** 2 + (p[1] - ty * 512 - y) ** 2);
+              d = Math.min(d, (p[0] - tx * 512 - x - 0.5) ** 2 + (p[1] - ty * 512 - y - 0.5) ** 2);
             density[y * 512 + x] = Math.max(
               density[y * 512 + x],
               Math.min(1, peak * Math.exp(-d / (2 * sigma ** 2)))
@@ -127,7 +128,8 @@ test('a stronger trail along another mapped way does not pull the line', async (
 test("a wide road's bright edge does not pull a path beside it", async () => {
   // A wide, busy road along x = 0 (heat 8 m either side of its centre),
   // mapped, and a faint path 20 m west of it, beyond a darker gap. The path is
-  // drawn roughly, halfway to the road's edge (way 450064354).
+  // drawn roughly, towards the road's edge (way 450064354), but still on the
+  // path's side of the gap (the gap's darkest point is at x = -15).
   const road = [],
     path = [];
   for (let y = 0; y >= -200; y -= 2) {
@@ -143,8 +145,8 @@ test("a wide road's bright edge does not pull a path beside it", async () => {
   );
   const rough = [
     [-20, 0],
-    [-15, -60],
-    [-15, -140],
+    [-16, -60],
+    [-16, -140],
     [-20, -200],
   ].map(at);
   const result = await slideLine(rough, raster, {
@@ -344,6 +346,40 @@ test('a drawn jog across the trail is straightened, not kept as a switchback', a
   });
   const off = Math.max(...result.map((p) => Math.abs(metres(p.loc)[0])));
   assert.ok(off < 1.5, `line runs ${off.toFixed(1)} m off the trail`);
+});
+
+test("a switchback's tip drawn on the trail keeps its place", async () => {
+  // North along x = 0, a tight turn of radius 3 m, then south along x = 6:
+  // the legs' heat merges into one band, brightest between them, below the
+  // tip; the heat cannot show the turn. The drawing follows the trail, its
+  // tip with several points (#43, way 1569617536).
+  const centre = [];
+  for (let y = -100; y <= 0; y += 1) centre.push([0, y]);
+  for (let a = 180; a >= 0; a -= 10) {
+    const r = (a * Math.PI) / 180;
+    centre.push([3 + 3 * Math.cos(r), 3 * Math.sin(r)]);
+  }
+  for (let y = 0; y >= -100; y -= 1) centre.push([6, y]);
+  const raster = createHeatmapRaster(trailTiles([{ centre, peak: 1.3 }]), 15);
+  const rough = [
+    [0, -100],
+    [0, -40],
+    [0, -10],
+    [0.4, 1.5],
+    [1.5, 2.6],
+    [3, 3],
+    [4.5, 2.6],
+    [5.6, 1.5],
+    [6, -10],
+    [6, -40],
+    [6, -100],
+  ].map(at);
+  const result = await slideLineTwice(rough, raster, {
+    fixedIndices: [0, 10],
+    yield: async () => {},
+  });
+  const top = Math.max(...result.map((p) => metres(p.loc)[1]));
+  assert.ok(top > 2.5, `the line turns ${(3 - top).toFixed(1)} m below the tip`);
 });
 
 test('sliding a slid line again leaves it unchanged', async () => {

@@ -180,5 +180,13 @@ window.SLIDE_LAB_WAYS = [
    "switchback",
    "fixed"
   ]
+ },
+ {
+  "id": "1569617536",
+  "name": "Nick Eaton Trail #447 (pdxvr): switchback tangle",
+  "tags": [
+   "switchback",
+   "fixed"
+  ]
  }
 ];

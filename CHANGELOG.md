@@ -14,7 +14,7 @@
   - Works on closed lines; sections without a usable heatmap trail are left as drawn instead of failing the whole line
   - Ignores the heat of other mapped roads and paths next to the line, including the bright edges of wide roads, so a stronger parallel trail does not pull it
   - Avoids running along other roads into a junction, folding back over itself, spikes and near-duplicate points; one Shift+S runs two smoothing passes
-  - Follows the trail's curves, bends and hairpins more closely, adding points to round the turns and dropping needless ones on straight stretches; tight drawn switchbacks the heatmap cannot show are kept as drawn
+  - Follows the middle of the trail rather than where its points were drawn, and its curves, bends and hairpins more closely, adding points to round the turns and dropping needless ones on straight stretches; tight drawn switchbacks the heatmap cannot show are kept as drawn
   - Leaves parts with no heatmap trail exactly as drawn, and traces the trail into junctions instead of keeping the drawing's approach to them
   - Shift+S again on a line already on its trail leaves it unchanged
   - Shift+S works right after drawing a line; Slide sits after Straighten in the edit menu; clearer, colored messages

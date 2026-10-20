@@ -69,7 +69,7 @@ export const SLIDE_DEFAULTS = Object.freeze({
   maxSearchRadiusMeters: 80,
   snapRadiusMeters: 18,
   maxSnapRadiusMeters: 60,
-  simplifyMeters: 2,
+  simplifyMeters: 1,
   contrastRadiusMeters: 12,
   minTriangleSquareMeters: 10,
   avoidMeters: 4,
@@ -586,7 +586,74 @@ async function trackingSurface(raster, scale, options) {
   }
   if (!hasSignal) throw noSignal('No usable heatmap trail is visible in this area.');
   // `heat`: the raw density, for the checks that need absolute brightness.
-  return { ...raster, density: signal, heat: raster.density };
+  return {
+    ...raster,
+    density: signal,
+    heat: raster.density,
+    ...bandCentre(signal, width, height, Math.max(1, Math.ceil(CENTRE_RADIUS_METERS / scale))),
+  };
+}
+
+// Where each pixel lies across its band, 0 (edge) to 1 (middle): its
+// distance to the band's edge (where the signal falls below half, `depth`, in
+// pixels), relative to the largest such distance within `radius` pixels
+// (`centre`). The tiles saturate,
+// so a band's top is flat: without this, the trace runs anywhere on it, and
+// on a bend along its inner edge (the shortest way).
+const CENTRE_RADIUS_METERS = 4;
+function bandCentre(signal, width, height, radius) {
+  const depth = new Float32Array(signal.length);
+  for (let i = 0; i < signal.length; i++) depth[i] = signal[i] >= 0.5 ? Infinity : 0;
+  // Chamfer distance transform (1 straight, √2 diagonal), two passes.
+  const relax = (i, j, d) => {
+    if (depth[j] + d < depth[i]) depth[i] = depth[j] + d;
+  };
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      if (!depth[i]) continue;
+      if (x > 0) relax(i, i - 1, 1);
+      if (y > 0) {
+        relax(i, i - width, 1);
+        if (x > 0) relax(i, i - width - 1, Math.SQRT2);
+        if (x < width - 1) relax(i, i - width + 1, Math.SQRT2);
+      }
+    }
+  for (let y = height - 1; y >= 0; y--)
+    for (let x = width - 1; x >= 0; x--) {
+      const i = y * width + x;
+      if (!depth[i]) continue;
+      if (x < width - 1) relax(i, i + 1, 1);
+      if (y < height - 1) {
+        relax(i, i + width, 1);
+        if (x < width - 1) relax(i, i + width + 1, Math.SQRT2);
+        if (x > 0) relax(i, i + width - 1, Math.SQRT2);
+      }
+    }
+  for (let i = 0; i < depth.length; i++) if (!Number.isFinite(depth[i])) depth[i] = 0;
+  const top = maxFilter(depth, width, height, radius);
+  return { depth, centre: depth.map((d, i) => (d ? d / top[i] : 0)) };
+}
+
+// The maximum of `data` within a (2·radius+1)² square around each pixel.
+function maxFilter(data, width, height, radius) {
+  const rows = new Float32Array(data.length),
+    out = new Float32Array(data.length);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      let m = 0;
+      for (let k = Math.max(0, x - radius); k <= Math.min(width - 1, x + radius); k++)
+        m = Math.max(m, data[y * width + k]);
+      rows[y * width + x] = m;
+    }
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      let m = 0;
+      for (let k = Math.max(0, y - radius); k <= Math.min(height - 1, y + radius); k++)
+        m = Math.max(m, rows[k * width + x]);
+      out[y * width + x] = m;
+    }
+  return out;
 }
 
 // Move one original vertex onto the nearest convincing trail point within
@@ -625,6 +692,9 @@ const HOLD_MAX_OFFSET_METERS = 4;
 // outside (`outward`, the sign of `normal` pointing there): `alignOut` pixels
 // instead of `align`.
 const BEND_ALIGN_METERS = 10;
+const TIP_DEGREES = 100;
+const TIP_ARC_METERS = 10;
+const TIP_KEEP_METERS = 8;
 function snap(raster, point, radius, normal, align = radius, hold = 0, outward = 0, alignOut = align) {
   const zone = (p) => {
     if (!raster.near) return 0;
@@ -740,8 +810,11 @@ const TIGHT_EDGE_SHARE = 0.1;
 // raster cells with 8-connectivity.
 //
 // Per-cell cost (cellCosts) strongly prefers high density (8·(1 − density)²),
-// with a small constant overhead and a mild penalty for straying from the
-// original line, so the result follows the ridge but does not drift sideways.
+// with a small constant overhead, a mild penalty for straying from the
+// original line, so the result follows the ridge but does not drift sideways,
+// and one for leaving the middle of a flat-topped band (CENTRE_COST × (1 −
+// raster.centre), see bandCentre). More would follow the middle of a merged
+// blob, e.g. across a hairpin's corner.
 // Adjacent cell costs are averaged for each step (trapezoid rule) so a step's
 // cost does not depend on which of its two ends it is evaluated from.
 //
@@ -752,6 +825,7 @@ const TIGHT_EDGE_SHARE = 0.1;
 // Afterwards the path is validated for continuity: a long dark interior
 // stretch means the corridor crossed a gap instead of following a trail. Such
 // paths raise SLIDE_NO_SIGNAL so the caller can retry with a wider radius.
+const CENTRE_COST = 0.3;
 async function trace(raster, start, end, originalStart, originalEnd, radius, options) {
   if (!isCovered(raster, start) || !isCovered(raster, end)) {
     throw noSignal('Heatmap coverage is incomplete at an endpoint.');
@@ -785,7 +859,10 @@ async function trace(raster, start, end, originalStart, originalEnd, radius, opt
       const distance = distanceToSegment([x, y], originalStart, originalEnd);
       if (!raster.coverage[j] || distance > radius) continue;
       cellCosts[i] =
-        0.06 + 8 * (1 - raster.density[j]) ** 2 + 0.04 * (distance / radius) ** 2;
+        0.06 +
+        8 * (1 - raster.density[j]) ** 2 +
+        0.04 * (distance / radius) ** 2 +
+        CENTRE_COST * (1 - (raster.centre?.[j] ?? 1));
       // A trail never runs over itself: make re-using the path traced by
       // earlier sections expensive, except where this section starts on it.
       if (
@@ -1043,6 +1120,16 @@ function simplifyKeep(points, tolerance, raster) {
   return keep;
 }
 
+// Whether the band under `point` ends within `reach` pixels along `out`
+// (pointing out of a turn): a switchback's tip, where the trail turns back.
+// A drawn spike next to a band that runs on is no tip.
+function bandEnds(tracking, point, out, reach) {
+  const depth = { ...tracking, density: tracking.depth };
+  for (let t = 0; t <= reach; t += 0.25)
+    if (!(sampleDensity(depth, [point[0] + out[0] * t, point[1] + out[1] * t]) > 0)) return true;
+  return false;
+}
+
 // Slide an entire line.
 //
 // Inputs:
@@ -1095,9 +1182,9 @@ export async function slideLine(locations, raster, options = {}) {
       : snapMeters);
   const radius = searchMeters / scale,
     snapRadius = snapMeters / scale;
-  // 1.2 m was only about half a zoom-15 pixel (~2.39 m/pixel here), so the old
-  // Douglas–Peucker pass retained raster stair-steps as tiny 45°/90° bends.
-  // Two meters removes that quantization noise; the density guard protects
+  // About half a zoom-15 pixel (~2 m/pixel): finer would keep raster
+  // stair-steps as tiny bends, coarser cuts a gentle curve of a wide band into
+  // a chord (smoothLine rounds what is left). The density guard protects
   // genuine tight bends. Original vertices remain segment endpoints throughout.
   const tolerance = (options.simplifyMeters ?? SLIDE_DEFAULTS.simplifyMeters) / scale;
   const minArea =
@@ -1176,12 +1263,52 @@ export async function slideLine(locations, raster, options = {}) {
   // normal pointing away from its neighbours' midpoint, else 0. The drawing
   // often cuts a hairpin's corner by more than alignMeters: such a vertex
   // centres outwards up to BEND_ALIGN_METERS (see snap).
+  // Tips of the drawing (TIP_DEGREES of turn within TIP_ARC_METERS on either
+  // side, however many points draw it): the sign of the normal pointing out
+  // of the turn, else 0, and the points TIP_ARC_METERS away on its legs. At a
+  // switchback's tip the heat is brightest just inside it, where its two legs
+  // overlap, so climbing pulls a tip vertex inwards (see tipHeld).
+  // One vertex per tip: the one turning most within TIP_ARC_METERS either
+  // way. `tips[i]` is the unit direction out of its turn, from the midpoint
+  // of its legs (`tipLegs[i]`, TIP_ARC_METERS away) through it.
+  const tipLegs = [];
+  const turns = originals.map((p, i) => {
+    if (options.holdBends === false || i === 0 || i === originals.length - 1) return 0;
+    const reach = (step) => {
+      let along = 0,
+        k = i;
+      while (k + step >= 0 && k + step < originals.length && along < TIP_ARC_METERS / scale) {
+        along += Math.hypot(originals[k + step][0] - originals[k][0], originals[k + step][1] - originals[k][1]);
+        k += step;
+      }
+      return k;
+    };
+    const [ka, kb] = [reach(-1), reach(1)];
+    const [a, b] = [originals[ka], originals[kb]];
+    const u = [p[0] - a[0], p[1] - a[1]],
+      v = [b[0] - p[0], b[1] - p[1]];
+    const length = Math.hypot(...u) * Math.hypot(...v);
+    if (!length) return 0;
+    tipLegs[i] = { a, b, ka, kb };
+    return (Math.acos(Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1]) / length))) * 180) / Math.PI;
+  });
+  const tips = originals.map((p, i) => {
+    if (turns[i] < TIP_DEGREES) return null;
+    const { a, b, ka, kb } = tipLegs[i];
+    for (let k = ka; k <= kb; k++) if (turns[k] > turns[i] || (turns[k] === turns[i] && k < i)) return null;
+    const out = [p[0] - (a[0] + b[0]) / 2, p[1] - (a[1] + b[1]) / 2];
+    const length = Math.hypot(...out);
+    return length ? out.map((v) => v / length) : null;
+  });
   const outwards = originals.map((p, i) => {
     if (!bends[i] || holds[i] || !normals[i]) return 0;
     const [a, b] = [originals[i - 1], originals[i + 1]];
     const dot = (p[0] - (a[0] + b[0]) / 2) * normals[i][0] + (p[1] - (a[1] + b[1]) / 2) * normals[i][1];
     return Math.sign(dot);
   });
+  // A held bend or tip of the drawing that stayed in place (see snap).
+  const held = (i) =>
+    holds[i] && anchors[i][0] === originals[i][0] && anchors[i][1] === originals[i][1];
   // 2) Snap every vertex to a trail point ("anchor"). Fixed vertices are their
   //    own anchors, so endpoints and junctions never move. Snapping widens
   //    adaptively before giving up, because the drawn line may be far from the
@@ -1226,6 +1353,28 @@ export async function slideLine(locations, raster, options = {}) {
     }
     anchors.push(anchor);
   }
+  // A tip drawn on its band, where the band ends: the heat cannot show where
+  // a tight switchback turns (its legs' heat merges into one wavy band), so
+  // the drawing's tip stays, with its drawn points within TIP_KEEP_METERS
+  // along the line. The line between them is not traced (see untraced): a
+  // trace from the merged heat would hook around them. A kept tip is a fold
+  // on purpose and stays when smoothing.
+  const tipHeld = new Set();
+  for (let i = 0; i < originals.length; i++) {
+    if (!tips[i] || fixed.has(i) || unsnapped.has(i)) continue;
+    if (sampleDensity(tracking, originals[i]) < 0.25) continue;
+    if (!bandEnds(tracking, originals[i], tips[i], snapRadius)) continue;
+    tipHeld.add(i);
+    for (const step of [-1, 1]) {
+      let along = 0;
+      for (let k = i + step; k > 0 && k < originals.length - 1 && !fixed.has(k); k += step) {
+        along += Math.hypot(originals[k][0] - originals[k - step][0], originals[k][1] - originals[k - step][1]);
+        if (along > TIP_KEEP_METERS / scale) break;
+        tipHeld.add(k);
+      }
+    }
+  }
+  for (const k of tipHeld) anchors[k] = originals[k];
   // A closed line starts and ends on the same node: both ends must share one
   // position and status, so the last copies the first.
   const last = originals.length - 1;
@@ -1319,6 +1468,8 @@ export async function slideLine(locations, raster, options = {}) {
   // Sections the caller wants left as drawn (slideLineTwice: those the first
   // pass left as drawn) are not traced.
   const untraced = new Set(options.untracedSections || []);
+  for (let i = 1; i < originals.length; i++)
+    if (tipHeld.has(i - 1) && tipHeld.has(i)) untraced.add(i);
   const paths = [null];
   for (let i = 1; i < originals.length; i++) {
     paths[i] = untraced.has(i) ? null : await traceSection(i);
@@ -1383,7 +1534,7 @@ export async function slideLine(locations, raster, options = {}) {
   };
   for (let i = 1; i < originals.length - 1; i++) {
     // A held bend of the drawing (a switchback) is a fold on purpose.
-    if (fixed.has(i) || unsnapped.has(i) || holds[i] || !paths[i] || !paths[i + 1]) continue;
+    if (fixed.has(i) || unsnapped.has(i) || held(i) || tipHeld.has(i) || !paths[i] || !paths[i + 1]) continue;
     let fold = null;
     for (let d = 0.5; d <= FOLD_MAX_METERS / scale; d += 0.5) {
       const a = pointAt(paths[i], d, true),
@@ -1473,12 +1624,11 @@ export async function slideLine(locations, raster, options = {}) {
   // A held bend of the drawing (a switchback) that stayed in place is kept
   // as drawn too: the heat cannot show it, so neither simplification nor
   // smoothing may soften it.
-  const held = (i) =>
-    holds[i] && anchors[i][0] === originals[i][0] && anchors[i][1] === originals[i][1];
   const keepVertex = (i) =>
     fixed.has(i) ||
     unsnapped.has(i) ||
     held(i) ||
+    tipHeld.has(i) ||
     !traced[i] ||
     (i < last && !traced[i + 1]);
   const pixels = result.map((record) => project(record.loc, raster.zoom));
@@ -1607,7 +1757,7 @@ export async function slideLineTwice(locations, raster, options = {}) {
     })),
     raster
   ).map(({ loc, nodeIndex }) => ({ loc, nodeIndex }));
-  const stable = keepStable(locations, result);
+  const stable = keepStable(locations, result, fixed);
   stable.skipped = first.skipped;
   return stable;
 }
@@ -1615,12 +1765,13 @@ export async function slideLineTwice(locations, raster, options = {}) {
 // Where the slid line stays within STABLE_METERS of the line as it was, keep
 // the points as they were: the trace runs on whole heatmap pixels (about 2 m),
 // so sliding a line already on its trail would otherwise move it a little
-// differently every time. Only the stretches that really changed are replaced
+// differently every time. Not more: a band is about 4 m wide, and old points
+// anywhere on it would stay. Only the stretches that really changed are replaced
 // (a slid point further than this from the old line, or an old point further
 // than this from the slid one), so a repeated Slide leaves a settled line
 // alone.
-const STABLE_METERS = 2;
-function keepStable(locations, result) {
+const STABLE_METERS = 1;
+function keepStable(locations, result, fixed = new Set()) {
   if (locations.length < 2 || result.length < 2) return result;
   const lat0 = (locations[0][1] * Math.PI) / 180;
   const xy = ([lon, lat]) => [lon * 111320 * Math.cos(lat0), lat * 110540];
@@ -1648,23 +1799,33 @@ function keepStable(locations, result) {
   // or not. A close run takes the old points over the same stretch instead,
   // unless an old point there strayed from the slid line, or the two differ
   // in point count (a drawn line next to its slid version; a repeated Slide
-  // has about the same points). The ends of the line are fixed, so the runs
-  // start and end on old points.
+  // has about the same points). A fixed vertex (`fixed`, original indices) is
+  // a run of its own and always taken as slid: an old stretch must not swap
+  // it out.
+  const pinned = (k) => fixed.has(result[k].nodeIndex);
   const out = [];
   let changed = false;
   for (let a = 0; a < Q.length; ) {
+    if (pinned(a)) {
+      const { loc, nodeIndex } = result[a];
+      if (loc.some((v, i) => v !== locations[nodeIndex][i])) changed = true;
+      out.push({ loc: loc.slice(), nodeIndex });
+      a++;
+      continue;
+    }
     const close = onP[a].d <= STABLE_METERS;
     let b = a;
-    while (b + 1 < Q.length && onP[b + 1].d <= STABLE_METERS === close) b++;
+    while (b + 1 < Q.length && !pinned(b + 1) && onP[b + 1].d <= STABLE_METERS === close) b++;
     const old = [];
     if (close)
       for (let i = 0; i < P.length; i++)
-        if (along[i] >= onP[a].s - 1e-6 && along[i] <= onP[b].s + 1e-6) old.push(i);
+        if (!fixed.has(i) && along[i] >= onP[a].s - 1e-6 && along[i] <= onP[b].s + 1e-6)
+          old.push(i);
     const keepOld =
       close &&
       old.length &&
       !old.some((i) => pMoved[i]) &&
-      Math.abs(old.length - (b - a + 1)) <= Math.max(2, 0.25 * Math.max(old.length, b - a + 1));
+      Math.abs(old.length - (b - a + 1)) <= Math.max(1, 0.25 * Math.max(old.length, b - a + 1));
     if (keepOld) old.forEach((i) => out.push({ loc: locations[i].slice(), nodeIndex: i }));
     else {
       changed = true;
@@ -1672,7 +1833,9 @@ function keepStable(locations, result) {
     }
     a = b + 1;
   }
-  if (!changed) return locations.map((loc, i) => ({ loc: loc.slice(), nodeIndex: i }));
+  // An old point the slid line left behind is a change too.
+  if (!changed && !pMoved.some(Boolean))
+    return locations.map((loc, i) => ({ loc: loc.slice(), nodeIndex: i }));
   // Each original vertex at most once, in order.
   let previous = -1;
   return out.flatMap((point, k) => {
@@ -1691,18 +1854,21 @@ function keepStable(locations, result) {
 // Smooth the slid line's turns: the heatmap is too coarse to show the curve of
 // a bend, and the traced corners look wrong on the map. Each free stretch
 // (between vertices that stay as drawn, `drawn`, and the ends) is resampled
-// every SMOOTH_STEP_METERS and smoothed by SMOOTH_PASSES rounds of moving
-// each sample halfway to its neighbours' average (about SMOOTH_METERS of
-// rounding), with the stretch's ends pinned. If a sample loses more than half
-// of its heat (it left the trail), the stretch is smoothed half as much, up to
-// three times, else left as traced. Likewise if a sample moves more than
+// every SMOOTH_STEP_METERS and smoothed by SMOOTH_PASSES rounds of Taubin
+// smoothing, with the stretch's ends pinned: each sample moves halfway to its
+// neighbours' average, then back by SMOOTH_UNSHRINK of that. Plain averaging
+// shrinks every curve towards its inside, so the line ran along the inner
+// edge of each bend. If a sample loses more than half
+// of its heat (it left the trail), the stretch is smoothed half as much, down
+// to one pass, else left as traced. Likewise if a sample moves more than
 // SMOOTH_MAX_SHIFT_METERS off the traced line: on a wide band, rounding keeps
 // its heat while cutting a hairpin's apex. The curve is then simplified finely
 // (SMOOTH_TOLERANCE_METERS), so bends get many points and straight parts few;
 // original vertices of the stretch are reused, in order, for the nearest
 // points, so their OSM nodes are kept.
 const SMOOTH_STEP_METERS = 1.5;
-const SMOOTH_PASSES = 24;
+const SMOOTH_PASSES = 96;
+const SMOOTH_UNSHRINK = 0.51;
 const SMOOTH_TOLERANCE_METERS = 0.4;
 const SMOOTH_MIN_HEAT = 0.5;
 const SMOOTH_MAX_SHIFT_METERS = 2;
@@ -1749,15 +1915,18 @@ function smoothRun(run, raster, step, scale) {
   }
   const heat = samples.map((p) => sampleDensity(raster, p) * SMOOTH_MIN_HEAT);
   let smooth = null;
-  for (let passes = SMOOTH_PASSES; passes >= SMOOTH_PASSES / 8 && !smooth; passes /= 2) {
+  for (let passes = SMOOTH_PASSES; passes >= 1 && !smooth; passes = Math.floor(passes / 2)) {
     let current = samples.map((p) => p.slice());
     for (let pass = 0; pass < passes; pass++) {
       const next = current.map((p) => p.slice());
-      for (let i = 1; i < current.length - 1; i++)
-        for (const axis of [0, 1])
-          next[i][axis] =
-            current[i][axis] / 2 + (current[i - 1][axis] + current[i + 1][axis]) / 4;
-      current = next;
+      for (const factor of [0.5, -SMOOTH_UNSHRINK]) {
+        for (let i = 1; i < current.length - 1; i++)
+          for (const axis of [0, 1])
+            next[i][axis] =
+              current[i][axis] +
+              factor * ((current[i - 1][axis] + current[i + 1][axis]) / 2 - current[i][axis]);
+        current = next.map((p) => p.slice());
+      }
     }
     if (
       current.every(

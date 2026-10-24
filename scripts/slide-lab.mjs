@@ -230,7 +230,13 @@ export async function slide(wayId, activity, { moveEnds = false, once = false } 
     Math.max(...lats) + padDeg,
   ];
   const others = Object.values(graph.entities)
-    .filter((e) => e.type === 'way' && e.id !== selection.way.id && e.tags.highway)
+    .filter(
+      (e) =>
+        e.type === 'way' &&
+        e.id !== selection.way.id &&
+        e.tags.highway &&
+        (!e.tags.tunnel || e.tags.tunnel === 'no')
+    )
     .map((way) => ({
       id: way.id.slice(1),
       label: way.tags.name || way.tags.highway,

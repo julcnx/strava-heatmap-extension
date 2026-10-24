@@ -171,5 +171,26 @@ window.SLIDE_LAB_WAYS = [
    "jump",
    "fixed"
   ]
+ },
+ {
+  "id": "37097733",
+  "name": "Rawnsley Bluff Trail",
+  "tags": [
+   "switchback"
+  ]
+ },
+ {
+  "id": "1569617536",
+  "name": "Nick Eaton Trail #447 (pdxvr): switchback tangle",
+  "tags": [
+   "switchback"
+  ]
+ },
+ {
+  "id": "1570331573",
+  "name": "path (rene78): Slide fails",
+  "tags": [
+   "fixed"
+  ]
  }
 ];

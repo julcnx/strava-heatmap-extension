@@ -239,6 +239,8 @@ export async function setupSlide(
             ]
           )
           .padByMeters(SLIDE_DEFAULTS.maxSearchRadiusMeters);
+        // Tunnels have no heat (no GPS underground): masking them would erase
+        // the heat of a trail crossing over them.
         const others = context
           .history()
           .intersects(extent)
@@ -246,7 +248,8 @@ export async function setupSlide(
             (entity) =>
               entity.type === 'way' &&
               entity.id !== selection.way.id &&
-              entity.tags.highway
+              entity.tags.highway &&
+              (!entity.tags.tunnel || entity.tags.tunnel === 'no')
           )
           .map((way) =>
             way.nodes.flatMap((id) => (graph.hasEntity(id) ? [graph.entity(id).loc] : []))

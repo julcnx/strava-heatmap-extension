@@ -188,5 +188,12 @@ window.SLIDE_LAB_WAYS = [
    "switchback",
    "fixed"
   ]
+ },
+ {
+  "id": "1570331573",
+  "name": "path (rene78): Slide fails",
+  "tags": [
+   "fixed"
+  ]
  }
 ];

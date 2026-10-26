@@ -4,12 +4,9 @@ window.SLIDE_LAB_WAYS = [
  {
   "id": "148185960",
   "name": "unclassified",
-  "tags": []
- },
- {
-  "id": "99288154",
-  "name": "unclassified",
-  "tags": []
+  "tags": [
+   "fixed"
+  ]
  },
  {
   "id": "73051811",
@@ -205,5 +202,41 @@ window.SLIDE_LAB_WAYS = [
   "tags": [
    "fixed"
   ]
+ },
+ {
+  "id": "77603052",
+  "name": "unclassified",
+  "tags": []
+ },
+ {
+  "id": "360893038",
+  "name": "secondary",
+  "tags": [
+   "fixed"
+  ]
+ },
+ {
+  "id": "70651505",
+  "name": "secondary",
+  "tags": [
+   "fixed"
+  ]
+ },
+ {
+  "id": "99290495",
+  "name": "residential",
+  "tags": [
+   "fixed"
+  ]
+ },
+ {
+  "id": "77602876",
+  "name": "residential: straight, faint",
+  "tags": []
+ },
+ {
+  "id": "73051814",
+  "name": "residential",
+  "tags": []
  }
 ];

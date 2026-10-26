@@ -44,6 +44,7 @@ import {
   cleanSlideResult,
   fixedIndices,
   getSlideSelection,
+  isRoad,
   isStructure,
 } from '../src/clients/www.openstreetmap.org/slide/action.js';
 import { loadSlideTiles } from '../src/clients/www.openstreetmap.org/slide/tiles.js';
@@ -280,6 +281,7 @@ export async function slide(wayId, activity, { moveEnds = false, once = false } 
   const result = await (once ? slideLine : slideLineTwice)(locations, raster, {
     fixedIndices: fixed,
     limitedIndices: moveEnds ? [0, last] : [],
+    road: isRoad(selection.way),
     otherWays: others.map((other) => other.locs),
     signal,
   });

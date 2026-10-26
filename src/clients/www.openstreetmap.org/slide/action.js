@@ -69,6 +69,13 @@ export function isStructure(way) {
   return ['bridge', 'tunnel'].some((key) => way.tags[key] && way.tags[key] !== 'no');
 }
 
+// Roads have wide, flat-topped heat bands, trails narrow ones: Slide smooths
+// a road's line more (see ROAD_SMOOTHING in algorithm.js).
+const TRAILS = new Set(['path', 'footway', 'track', 'bridleway', 'cycleway', 'steps']);
+export function isRoad(way) {
+  return !TRAILS.has(way.tags.highway);
+}
+
 // Indices (within the selection) of vertices that must not MOVE: tagged nodes
 // (a ford, gate or crossing marks a specific spot), relation members,
 // junctions (they are mapped where the ways meet, and moving one bends every

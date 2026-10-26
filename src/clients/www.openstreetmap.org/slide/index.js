@@ -20,6 +20,7 @@ import {
   createSlideAction,
   getSlideSelection,
   fixedIndices,
+  isRoad,
   isStructure,
   selectionUnchanged,
 } from './action.js';
@@ -272,6 +273,7 @@ export async function setupSlide(
           fixedIndices: [
             ...new Set([0, selection.nodes.length - 1, ...fixedIndices(graph, selection)]),
           ],
+          road: isRoad(selection.way),
           otherWays: others,
           signal: controller.signal,
           onProgress: (value) =>

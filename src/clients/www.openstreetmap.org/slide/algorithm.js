@@ -1140,7 +1140,8 @@ function bandEnds(tracking, point, out, reach) {
 //               caller), signal (AbortSignal), yield (async hook so long loops
 //               can repaint), onProgress (0..1), otherWays (nearby mapped
 //               roads and paths as arrays of [lon, lat], whose heat is
-//               ignored), plus the metre-based knobs documented in
+//               ignored), road (the line is a road, not a trail: see
+//               ROAD_SMOOTHING), plus the metre-based knobs documented in
 //               SLIDE_DEFAULTS.
 //
 // Returns ordered records { loc, nodeIndex }: nodeIndex identifies the
@@ -1562,6 +1563,10 @@ export async function slideLine(locations, raster, options = {}) {
     const center = snap(tracking, originals[v], snapRadius, normals[v], align);
     if (!center) return 0;
     const offset = Math.hypot(center[0] - originals[v][0], center[1] - originals[v][1]);
+    // A road joins over ROAD_APPROACH_FACTOR × its offset, from
+    // ROAD_APPROACH_MIN_METERS: on a wide band, even a small offset makes a
+    // hook.
+    if (options.road) return offset * scale > ROAD_APPROACH_MIN_METERS ? ROAD_APPROACH_FACTOR * offset : 0;
     return offset > 1 ? SLIDE_DEFAULTS.approachFactor * offset : 0;
   };
   // Drop the interior points within `length` pixels along the path from its
@@ -1648,7 +1653,7 @@ export async function slideLine(locations, raster, options = {}) {
     // switchback's tip kept as drawn (see tipHeld), not a spike.
     .map((record) =>
       record.nodeIndex !== null && keepVertex(record.nodeIndex)
-        ? { ...record, drawn: true, ...(tipHeld.has(record.nodeIndex) && { tip: true }) }
+        ? { ...record, drawn: true, ...((tipHeld.has(record.nodeIndex) || held(record.nodeIndex)) && { tip: true }) }
         : record
     );
   simplified.skipped = result.skipped;
@@ -1756,15 +1761,108 @@ export async function slideLineTwice(locations, raster, options = {}) {
       nodeIndex: record.nodeIndex === null ? null : first[record.nodeIndex].nodeIndex,
       drawn: record.drawn,
     })),
-    raster
+    raster,
+    options.road ? ROAD_SMOOTHING : TRAIL_SMOOTHING
   ).map(({ loc, nodeIndex }) => ({ loc, nodeIndex }));
   // The switchback tips the first pass kept as drawn (see cleanSlideResult).
   const tips = new Set(first.flatMap((record) => (record.tip ? [record.nodeIndex] : [])));
-  const stable = keepStable(locations, result, fixed).map((record) =>
-    tips.has(record.nodeIndex) ? { ...record, tip: true } : record
+  const stable = roundTips(
+    keepStable(locations, result, fixed).map((record) =>
+      tips.has(record.nodeIndex) ? { ...record, tip: true } : record
+    ),
+    fixed,
+    raster.zoom
   );
   stable.skipped = first.skipped;
   return stable;
+}
+
+// A switchback's tip kept as drawn (`tip`) is where the trail turns, but two
+// straight legs meeting there make a V. Make it a U-turn through it: a circle
+// of TIP_RADIUS_METERS inside the turn, the tip its far point, joined by each
+// leg's tangent from the point TIP_LEG_REACH_METERS along it (or the nearest
+// fixed vertex), the points in between dropped. The tip keeps its place.
+const TIP_RADIUS_METERS = 2;
+const TIP_LEG_REACH_METERS = 8;
+const TIP_ARC_STEP_METERS = 1;
+const TIP_V_DEGREES = 60;
+function roundTips(records, fixed, zoom) {
+  let out = records;
+  for (let k = 1; k < out.length - 1; k++) {
+    if (!out[k].tip) continue;
+    const scale = metersPerPixel(out[k].loc[1], zoom);
+    const pts = out.map((record) => project(record.loc, zoom));
+    const apex = pts[k];
+    // Only a V: a tip the line already rounds (on a curve) stays.
+    const [p, q] = [pts[k - 1], pts[k + 1]];
+    const turn = Math.acos(
+      Math.max(-1, Math.min(1, ((apex[0] - p[0]) * (q[0] - apex[0]) + (apex[1] - p[1]) * (q[1] - apex[1])) /
+        (Math.hypot(apex[0] - p[0], apex[1] - p[1]) * Math.hypot(q[0] - apex[0], q[1] - apex[1]) || 1)))
+    );
+    if ((turn * 180) / Math.PI < TIP_V_DEGREES) continue;
+    // The leg's end on either side: TIP_LEG_REACH_METERS along, or a fixed
+    // vertex (or another tip) before that.
+    const legEnd = (step) => {
+      let along = 0,
+        m = k;
+      while (m + step >= 0 && m + step < out.length) {
+        m += step;
+        along += Math.hypot(pts[m][0] - pts[m - step][0], pts[m][1] - pts[m - step][1]) * scale;
+        if (along >= TIP_LEG_REACH_METERS || fixed.has(out[m].nodeIndex) || out[m].tip) break;
+      }
+      return m;
+    };
+    const [a, b] = [legEnd(-1), legEnd(1)];
+    const unit = (p) => {
+      const length = Math.hypot(p[0] - apex[0], p[1] - apex[1]);
+      return length ? [(p[0] - apex[0]) / length, (p[1] - apex[1]) / length] : null;
+    };
+    const [u, v] = [unit(pts[a]), unit(pts[b])];
+    if (!u || !v) continue;
+    const bisector = [u[0] + v[0], u[1] + v[1]];
+    const length = Math.hypot(...bisector);
+    if (!length) continue;
+    const r = TIP_RADIUS_METERS / scale;
+    const centre = [apex[0] + (bisector[0] / length) * r, apex[1] + (bisector[1] / length) * r];
+    // Each leg's tangent point on the circle (as an angle around it): of the
+    // two, the one on the leg's own side, away from the other leg.
+    const tangent = (p, other) => {
+      const d = Math.hypot(p[0] - centre[0], p[1] - centre[1]);
+      if (d <= r * 1.5) return null;
+      const angles = [-1, 1].map((side) => Math.atan2(p[1] - centre[1], p[0] - centre[0]) + side * Math.acos(r / d));
+      const away = (angle) => Math.hypot(centre[0] + Math.cos(angle) * r - other[0], centre[1] + Math.sin(angle) * r - other[1]);
+      return away(angles[0]) > away(angles[1]) ? angles[0] : angles[1];
+    };
+    const angleA = tangent(pts[a], pts[b]),
+      angleB = tangent(pts[b], pts[a]);
+    if (angleA === null || angleB === null) continue;
+    // The arc from A's tangent point to B's, through the apex.
+    const apexAngle = Math.atan2(apex[1] - centre[1], apex[0] - centre[0]);
+    const wrap = (x) => ((x % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    const direction = wrap(apexAngle - angleA) <= wrap(angleB - angleA) ? 1 : -1;
+    const span = direction > 0 ? wrap(angleB - angleA) : wrap(angleA - angleB);
+    const toApex = direction > 0 ? wrap(apexAngle - angleA) : wrap(angleA - apexAngle);
+    const steps = Math.max(2, Math.ceil((span * r * scale) / TIP_ARC_STEP_METERS));
+    const arc = [];
+    let apexDone = false;
+    for (let s = 0; s <= steps; s++) {
+      const t = (span * s) / steps;
+      if (!apexDone && t >= toApex) {
+        arc.push(out[k]);
+        apexDone = true;
+        if (Math.abs(t - toApex) * r * scale < TIP_ARC_STEP_METERS / 2) continue;
+      }
+      const angle = angleA + direction * t;
+      arc.push({ loc: unproject([centre[0] + Math.cos(angle) * r, centre[1] + Math.sin(angle) * r], zoom), nodeIndex: null });
+    }
+    if (!apexDone) continue;
+    // Points between a leg's end and the apex are replaced; protected ones
+    // (fixed) ended the leg, so none is lost. Free original vertices go.
+    const tip = out[k];
+    out = [...out.slice(0, a + 1), ...arc, ...out.slice(b)];
+    k = out.indexOf(tip);
+  }
+  return Object.assign(out, { skipped: records.skipped });
 }
 
 // Where the slid line stays within STABLE_METERS of the line as it was, keep
@@ -1881,7 +1979,31 @@ const SHARP_METERS = 12;
 const SHARP_DEGREES = 20;
 const SMOOTH_MIN_HEAT = 0.5;
 const SMOOTH_MAX_SHIFT_METERS = 2;
-function smoothLine(records, raster) {
+const STRAIGHT_END_METERS = 3;
+// A trail's band is narrow: smoothing must keep its hairpins. A road's is
+// wide and flat-topped, so its trace drifts across it in long, shallow
+// wobbles that Taubin smoothing keeps: a road is smoothed harder (less
+// unshrinking), its gentle bends count as curves over a longer reach, and it
+// leaves fixed vertices in a straight line (straightEnds, see smoothRun; and
+// ROAD_APPROACH_FACTOR in slideLine). options.road chooses.
+const TRAIL_SMOOTHING = {
+  passes: SMOOTH_PASSES,
+  unshrink: SMOOTH_UNSHRINK,
+  gentle: GENTLE_TOLERANCE_METERS,
+  sharpMeters: SHARP_METERS,
+  sharpDegrees: SHARP_DEGREES,
+};
+const ROAD_SMOOTHING = {
+  passes: 96,
+  unshrink: 0.4,
+  gentle: GENTLE_TOLERANCE_METERS,
+  sharpMeters: 25,
+  sharpDegrees: 15,
+  straightEnds: 20,
+};
+const ROAD_APPROACH_FACTOR = 6;
+const ROAD_APPROACH_MIN_METERS = 0.5;
+function smoothLine(records, raster, settings = TRAIL_SMOOTHING) {
   const zoom = raster.zoom;
   const scale = metersPerPixel(records[0].loc[1], zoom);
   const step = SMOOTH_STEP_METERS / scale;
@@ -1893,7 +2015,7 @@ function smoothLine(records, raster) {
     let to = from + 1;
     while (!pinned[to]) to++;
     const run = records.slice(from, to + 1);
-    result.push(...smoothRun(run, raster, step, scale).slice(1));
+    result.push(...smoothRun(run, raster, step, scale, settings).slice(1));
     from = to;
   }
   return result;
@@ -1907,7 +2029,7 @@ function offLine(p, points) {
   return best;
 }
 
-function smoothRun(run, raster, step, scale) {
+function smoothRun(run, raster, step, scale, settings) {
   if (run.length < 3) return run;
   const zoom = raster.zoom;
   const points = run.map((record) => project(record.loc, zoom));
@@ -1924,11 +2046,11 @@ function smoothRun(run, raster, step, scale) {
   }
   const heat = samples.map((p) => sampleDensity(raster, p) * SMOOTH_MIN_HEAT);
   let smooth = null;
-  for (let passes = SMOOTH_PASSES; passes >= 1 && !smooth; passes = Math.floor(passes / 2)) {
+  for (let passes = settings.passes; passes >= 1 && !smooth; passes = Math.floor(passes / 2)) {
     let current = samples.map((p) => p.slice());
     for (let pass = 0; pass < passes; pass++) {
       const next = current.map((p) => p.slice());
-      for (const factor of [0.5, -SMOOTH_UNSHRINK]) {
+      for (const factor of [0.5, -settings.unshrink]) {
         for (let i = 1; i < current.length - 1; i++)
           for (const axis of [0, 1])
             next[i][axis] =
@@ -1947,13 +2069,40 @@ function smoothRun(run, raster, step, scale) {
       smooth = current;
   }
   if (!smooth) return run;
+  // A road leaves the run's ends (a junction, a vertex kept as drawn) in a
+  // straight line: the longest, up to settings.straightEnds metres, that
+  // stays within STRAIGHT_END_METERS of the smoothed line and on its heat.
+  // Off the middle of a wide band, the line would otherwise hook into it.
+  if (settings.straightEnds) {
+    const reach = settings.straightEnds / scale;
+    for (const [from, step] of [[0, 1], [smooth.length - 1, -1]]) {
+      let best = -1,
+        along = 0;
+      for (let j = from + step; j > 0 && j < smooth.length - 1; j += step) {
+        along += Math.hypot(smooth[j][0] - smooth[j - step][0], smooth[j][1] - smooth[j - step][1]);
+        if (along > reach) break;
+        const [a, b] = [smooth[from], smooth[j]];
+        let fits = true;
+        for (let i = from + step; i !== j && fits; i += step)
+          fits =
+            distanceToSegment(smooth[i], a, b) * scale <= STRAIGHT_END_METERS &&
+            sampleDensity(raster, [a[0] + ((b[0] - a[0]) * (i - from)) / (j - from), a[1] + ((b[1] - a[1]) * (i - from)) / (j - from)]) >= heat[i];
+        if (fits) best = j;
+      }
+      for (let i = from + step; best >= 0 && i !== best; i += step)
+        smooth[i] = [
+          smooth[from][0] + ((smooth[best][0] - smooth[from][0]) * (i - from)) / (best - from),
+          smooth[from][1] + ((smooth[best][1] - smooth[from][1]) * (i - from)) / (best - from),
+        ];
+    }
+  }
   // Few points where the line runs straight or bends gently (GENTLE_
   // TOLERANCE_METERS, so the trace's pixel steps do not show as a wobble),
   // many where it turns sharply (SHARP_DEGREES within SHARP_METERS either
   // way: a switchback, a hairpin).
   const fine = simplifyKeep(smooth, SMOOTH_TOLERANCE_METERS / scale, raster);
-  const coarse = simplifyKeep(smooth, GENTLE_TOLERANCE_METERS / scale, raster);
-  const sharpReach = SHARP_METERS / scale;
+  const coarse = simplifyKeep(smooth, settings.gentle / scale, raster);
+  const sharpReach = settings.sharpMeters / scale;
   const sharp = (i) => {
     let a = i,
       b = i;
@@ -1962,7 +2111,7 @@ function smoothRun(run, raster, step, scale) {
     const u = [smooth[i][0] - smooth[a][0], smooth[i][1] - smooth[a][1]],
       v = [smooth[b][0] - smooth[i][0], smooth[b][1] - smooth[i][1]];
     const length = Math.hypot(...u) * Math.hypot(...v);
-    return length > 0 && (Math.acos(Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1]) / length))) * 180) / Math.PI > SHARP_DEGREES;
+    return length > 0 && (Math.acos(Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1]) / length))) * 180) / Math.PI > settings.sharpDegrees;
   };
   const keep = coarse.map((flag, i) => (flag || (fine[i] && sharp(i)) ? 1 : 0));
   const kept = smooth.flatMap((p, i) => (keep[i] ? [i] : []));

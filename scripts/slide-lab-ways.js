@@ -2,6 +2,16 @@
 // scripts/slide-lab.mjs when the page saves its list.
 window.SLIDE_LAB_WAYS = [
  {
+  "id": "148185960",
+  "name": "unclassified",
+  "tags": []
+ },
+ {
+  "id": "99288154",
+  "name": "unclassified",
+  "tags": []
+ },
+ {
   "id": "73051811",
   "name": "ป่าตึง ซอย 6",
   "tags": [

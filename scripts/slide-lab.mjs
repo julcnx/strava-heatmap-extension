@@ -26,6 +26,7 @@
 //
 // The pipeline mirrors the operation in src/clients/www.openstreetmap.org/slide/index.js:
 // keep both in sync.
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -652,6 +653,50 @@ async function snapshots(ids, accept) {
   }
 }
 
+// --- Other versions of Slide, to compare with ------------------------------------
+
+// The lab and Slide at a git ref (tag, branch or commit), extracted once into
+// .slide-lab/versions/<commit>, sharing this tile and OSM cache.
+const ROOT = path.resolve(import.meta.dirname, '..');
+const git = (...args) =>
+  execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const versions = new Map();
+function version(ref) {
+  const commit = git('rev-parse', '--verify', `${ref}^{commit}`);
+  if (!versions.has(commit)) {
+    const dir = path.join(DIR, 'versions', commit);
+    if (!fs.existsSync(path.join(dir, '.slide-lab'))) {
+      fs.mkdirSync(dir, { recursive: true });
+      execFileSync('tar', ['-x', '-C', dir], {
+        input: execFileSync('git', ['archive', commit, 'scripts', 'src'], { cwd: ROOT }),
+      });
+      fs.symlinkSync(DIR, path.join(dir, '.slide-lab'));
+    }
+    versions.set(
+      commit,
+      (async () => {
+        // Its own fetch hook would hide the tiles this lab lacks.
+        const fetch = globalThis.fetch;
+        const module = await import(pathToFileURL(path.join(dir, 'scripts', 'slide-lab.mjs')).href);
+        globalThis.fetch = fetch;
+        return module;
+      })()
+    );
+  }
+  return versions.get(commit);
+}
+
+// The page's comparison version of a run (beta.2): drawn under this one.
+async function compared(wayId, activity, options, ref) {
+  if (!ref) return null;
+  try {
+    const run = await (await version(ref)).slide(wayId, activity, options);
+    return { ref, result: run.result, stats: run.stats };
+  } catch (error) {
+    return { ref, error: error.message };
+  }
+}
+
 // --- CLI and web page ------------------------------------------------------------
 
 const args = process.argv.slice(2);
@@ -750,9 +795,11 @@ if (!main) {
         } else if ((m = url.pathname.match(/^\/shot\/(\d+)\.png$/))) {
           // Shift+S on the page: the current view as a PNG, also saved to a
           // file (its path in the X-File header).
-          const run = await slide(m[1], url.searchParams.get('activity') || 'all', {
-            moveEnds: url.searchParams.get('moveEnds') === '1',
-          });
+          const activity = url.searchParams.get('activity') || 'all';
+          const options = { moveEnds: url.searchParams.get('moveEnds') === '1' };
+          const run = await slide(m[1], activity, options);
+          const other = await compared(m[1], activity, options, url.searchParams.get('compare'));
+          if (other?.result) run.previous = other.result.map((p) => p.loc);
           const bbox = url.searchParams.get('bbox').split(',').map(Number);
           const [width, height] = ['w', 'h'].map((k) =>
             Math.max(64, Math.min(2400, Math.round(+url.searchParams.get(k))))
@@ -769,14 +816,15 @@ if (!main) {
           });
           res.end(png);
         } else if ((m = url.pathname.match(/^\/slide\/(\d+)\.(json|png)$/))) {
-          const run = await slide(m[1], url.searchParams.get('activity') || 'all', {
-            moveEnds: url.searchParams.get('moveEnds') === '1',
-          });
+          const activity = url.searchParams.get('activity') || 'all';
+          const options = { moveEnds: url.searchParams.get('moveEnds') === '1' };
+          const run = await slide(m[1], activity, options);
           if (m[2] === 'png') {
             res.writeHead(200, { 'Content-Type': 'image/png' });
             res.end(render(run));
           } else {
             const { raster, ...rest } = run;
+            rest.compare = await compared(m[1], activity, options, url.searchParams.get('compare'));
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(rest));
           }

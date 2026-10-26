@@ -1644,10 +1644,11 @@ export async function slideLine(locations, raster, options = {}) {
   const simplified = result
     .filter((_, k) => keep[k])
     // `drawn`: a vertex that stays as drawn (fixed, unsnapped, or ending a
-    // section left as drawn); smoothLine keeps it in place.
+    // section left as drawn); smoothLine keeps it in place. `tip`: a
+    // switchback's tip kept as drawn (see tipHeld), not a spike.
     .map((record) =>
       record.nodeIndex !== null && keepVertex(record.nodeIndex)
-        ? { ...record, drawn: true }
+        ? { ...record, drawn: true, ...(tipHeld.has(record.nodeIndex) && { tip: true }) }
         : record
     );
   simplified.skipped = result.skipped;
@@ -1757,7 +1758,11 @@ export async function slideLineTwice(locations, raster, options = {}) {
     })),
     raster
   ).map(({ loc, nodeIndex }) => ({ loc, nodeIndex }));
-  const stable = keepStable(locations, result, fixed);
+  // The switchback tips the first pass kept as drawn (see cleanSlideResult).
+  const tips = new Set(first.flatMap((record) => (record.tip ? [record.nodeIndex] : [])));
+  const stable = keepStable(locations, result, fixed).map((record) =>
+    tips.has(record.nodeIndex) ? { ...record, tip: true } : record
+  );
   stable.skipped = first.skipped;
   return stable;
 }
@@ -1862,14 +1867,18 @@ function keepStable(locations, result, fixed = new Set()) {
 // of its heat (it left the trail), the stretch is smoothed half as much, down
 // to one pass, else left as traced. Likewise if a sample moves more than
 // SMOOTH_MAX_SHIFT_METERS off the traced line: on a wide band, rounding keeps
-// its heat while cutting a hairpin's apex. The curve is then simplified finely
-// (SMOOTH_TOLERANCE_METERS), so bends get many points and straight parts few;
+// its heat while cutting a hairpin's apex. The curve is then simplified:
+// finely at sharp turns (SMOOTH_TOLERANCE_METERS), coarsely elsewhere
+// (GENTLE_TOLERANCE_METERS), so bends get many points and straight parts few;
 // original vertices of the stretch are reused, in order, for the nearest
 // points, so their OSM nodes are kept.
 const SMOOTH_STEP_METERS = 1.5;
 const SMOOTH_PASSES = 96;
 const SMOOTH_UNSHRINK = 0.51;
 const SMOOTH_TOLERANCE_METERS = 0.4;
+const GENTLE_TOLERANCE_METERS = 2;
+const SHARP_METERS = 12;
+const SHARP_DEGREES = 20;
 const SMOOTH_MIN_HEAT = 0.5;
 const SMOOTH_MAX_SHIFT_METERS = 2;
 function smoothLine(records, raster) {
@@ -1938,7 +1947,24 @@ function smoothRun(run, raster, step, scale) {
       smooth = current;
   }
   if (!smooth) return run;
-  const keep = simplifyKeep(smooth, SMOOTH_TOLERANCE_METERS / scale, raster);
+  // Few points where the line runs straight or bends gently (GENTLE_
+  // TOLERANCE_METERS, so the trace's pixel steps do not show as a wobble),
+  // many where it turns sharply (SHARP_DEGREES within SHARP_METERS either
+  // way: a switchback, a hairpin).
+  const fine = simplifyKeep(smooth, SMOOTH_TOLERANCE_METERS / scale, raster);
+  const coarse = simplifyKeep(smooth, GENTLE_TOLERANCE_METERS / scale, raster);
+  const sharpReach = SHARP_METERS / scale;
+  const sharp = (i) => {
+    let a = i,
+      b = i;
+    while (a > 0 && Math.hypot(smooth[i][0] - smooth[a][0], smooth[i][1] - smooth[a][1]) < sharpReach) a--;
+    while (b < smooth.length - 1 && Math.hypot(smooth[b][0] - smooth[i][0], smooth[b][1] - smooth[i][1]) < sharpReach) b++;
+    const u = [smooth[i][0] - smooth[a][0], smooth[i][1] - smooth[a][1]],
+      v = [smooth[b][0] - smooth[i][0], smooth[b][1] - smooth[i][1]];
+    const length = Math.hypot(...u) * Math.hypot(...v);
+    return length > 0 && (Math.acos(Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1]) / length))) * 180) / Math.PI > SHARP_DEGREES;
+  };
+  const keep = coarse.map((flag, i) => (flag || (fine[i] && sharp(i)) ? 1 : 0));
   const kept = smooth.flatMap((p, i) => (keep[i] ? [i] : []));
   // Reuse the original vertices (their OSM nodes) for the nearest kept points,
   // in order; the run's two ends keep theirs.

@@ -117,6 +117,7 @@ const MAX_OVERLAP_METERS = 30;
 // vertex snapped onto a neighbouring trail): a real switchback traced by Slide
 // has a rounded apex made of several gentler vertices.
 const SPIKE_TURN_DEGREES = 150;
+const TIP_LEG_METERS = 8;
 
 // Approximate ground distance in metres, using an equirectangular projection
 // at the pair's mean latitude. Accurate to far better than 1 % over the tiny
@@ -291,7 +292,17 @@ export function cleanSlideResult(before, selection, input) {
     let spike = -1,
       sharpest = SPIKE_TURN_DEGREES;
     for (let k = 1; k < kept.length - 1; k++) {
+      // A switchback's tip Slide kept as drawn (`tip`) turns back on purpose,
+      // between legs of at least TIP_LEG_METERS; on shorter ones, the trace
+      // folded back just short of it.
       if (!removable[kept[k]]) continue;
+      if (
+        result[kept[k]].tip &&
+        [kept[k - 1], kept[k + 1]].every(
+          (n) => distanceMeters(result[n].loc, result[kept[k]].loc) >= TIP_LEG_METERS
+        )
+      )
+        continue;
       const value = turn(kept[k - 1], kept[k], kept[k + 1]);
       if (value > sharpest) {
         spike = k;

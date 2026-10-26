@@ -238,5 +238,10 @@ window.SLIDE_LAB_WAYS = [
   "id": "73051814",
   "name": "residential",
   "tags": []
+ },
+ {
+  "id": "99288154",
+  "name": "unclassified",
+  "tags": []
  }
 ];

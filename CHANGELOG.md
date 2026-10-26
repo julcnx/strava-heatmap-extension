@@ -2,7 +2,7 @@
 
 ## Versions
 
-### `0.15.0` (2026-10-13)
+### `0.15.0` (2026-10-26)
 
 - [iD] New **Strava Slide**: press Shift+S, or right-click a line and choose Slide, to snap a roughly drawn line onto the heatmap trail. One Undo restores it. By @rene78 (#43, #45):
   - Local, dependency-free port inspired by Paul Mach's Slide and Strava's iD integration: traces the heatmap ridge between the line's points, so tight switchbacks are kept

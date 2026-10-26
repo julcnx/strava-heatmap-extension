@@ -46,7 +46,7 @@
   </select>
   <label title="Experiment: the first and last points may move even when they are junctions"><input type="checkbox" id="moveEnds"> Move ends</label>
   <button>Slide</button>
-  <span class="legend"><span style="color:#ff3cf0">original</span><span style="color:#7dff3a">result</span><span style="color:#ffffff">fixed</span><span style="color:#3d8bff">other ways (dashed)</span><span style="color:#ffdc00">moved junction</span></span>
+  <span class="legend"><span style="color:#ff3cf0">original</span><span style="color:#00dcff">beta.2</span><span style="color:#7dff3a">result</span><span style="color:#ffffff">fixed</span><span style="color:#3d8bff">other ways (dashed)</span><span style="color:#ffdc00">moved junction</span></span>
   <span id="status"></span>
 </form>
 <div id="map"></div>
@@ -58,6 +58,8 @@ const map = L.map('map', { maxZoom: 20 }).setView([36.757, -4.395], 16);
 const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19, className: 'base', attribution: 'Esri World Imagery' });
 L.control.layers({ None: L.layerGroup().addTo(map), Satellite: satellite }).addTo(map);
 const API = 'http://localhost:8765';
+// Every slide is also run with this version, drawn in cyan under the result.
+const COMPARE = 'v0.15.0-beta.2';
 // Colorize the grayscale tiles with Strava's orange ramp, like the extension
 // does in iD (src/clients/www.openstreetmap.org/colors.js).
 fetch(API + '/palettes.json').then((r) => r.json()).then((palettes) => {
@@ -209,6 +211,7 @@ document.addEventListener('keydown', (e) => {
   const b = map.getBounds(), size = map.getSize(), ratio = Math.min(2, window.devicePixelRatio || 1);
   const params = new URLSearchParams({ activity: $('activity').value, bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(','), w: size.x * ratio, h: size.y * ratio });
   if ($('moveEnds').checked) params.set('moveEnds', '1');
+  params.set('compare', COMPARE);
   $('status').textContent = 'Taking screenshot…';
   const shot = fetch(API + '/shot/' + way + '.png?' + params).then((response) => {
     if (!response.ok) throw new Error('Screenshot failed (' + response.status + ')');
@@ -249,7 +252,7 @@ async function slide(way, activity) {
   // The server lists the Strava tiles it lacks: fetch them here, where the
   // extension adds the Strava cookies, upload them, and try again.
   for (let round = 0; round < 4; round++) {
-    data = await (await fetch(API + '/slide/' + way + '.json?activity=' + activity + ($('moveEnds').checked ? '&moveEnds=1' : ''))).json();
+    data = await (await fetch(API + '/slide/' + way + '.json?activity=' + activity + ($('moveEnds').checked ? '&moveEnds=1' : '') + '&compare=' + COMPARE)).json();
     if (!data.missing) break;
     loading('Downloading ' + data.missing.length + ' heatmap tiles…');
     await Promise.all(data.missing.map(async (t) => {
@@ -265,6 +268,10 @@ async function slide(way, activity) {
   if (data.error) { $('status').textContent = data.error; return; }
   const original = L.polyline(data.original.map(ll), { color: '#ff3cf0', weight: 2, interactive: false }).addTo(layers);
   data.original.forEach((loc) => L.circleMarker(ll(loc), { radius: 3, color: '#ff3cf0', weight: 1 }).addTo(layers));
+  if (data.compare?.result) {
+    L.polyline(data.compare.result.map((p) => ll(p.loc)), { color: '#00dcff', weight: 2, interactive: false }).addTo(layers);
+    data.compare.result.forEach((p) => L.circleMarker(ll(p.loc), { radius: 3, color: '#00dcff', weight: 1 }).addTo(layers));
+  }
   L.polyline(data.result.map((p) => ll(p.loc)), { color: '#7dff3a', weight: 2, interactive: false }).addTo(layers);
   data.result.forEach((p) => L.circleMarker(ll(p.loc), { radius: 3, color: '#7dff3a', weight: 1 }).addTo(layers));
   // Fixed vertices: hover for why they stay (tags, junctions, relations, ends).
@@ -280,7 +287,8 @@ async function slide(way, activity) {
   current = { id: way, name: data.tags.name || data.tags.highway || '' };
   renderList();
   const s = data.stats;
-  $('status').innerHTML = (data.tags.name || data.tags.highway || '') + ': ' + s.pointsBefore + ' → ' + s.pointsAfter + ' points, ' + s.fixed + ' fixed, ' + s.skipped + ' skipped, ' + s.alongOther + ' along other, ' + s.ms + ' ms · <a style="color:#8cf" href="' + API + '/slide/' + way + '.png?activity=' + activity + '" target="_blank">PNG</a> · <a style="color:#8cf" target="_blank" href="https://www.openstreetmap.org/edit?way=' + way + '">iD</a>';
+  $('status').innerHTML = (data.tags.name || data.tags.highway || '') + ': ' + s.pointsBefore + ' → ' + s.pointsAfter + ' points, ' + s.fixed + ' fixed, ' + s.skipped + ' skipped, ' + s.alongOther + ' along other, ' + s.ms + ' ms · ' +
+    (data.compare ? '<span style="color:#00dcff">' + data.compare.ref + ': ' + (data.compare.error ? data.compare.error.replace(/</g, '&lt;') : data.compare.stats.pointsAfter + ' points, ' + data.compare.stats.skipped + ' skipped') + '</span> · ' : '') + '<a style="color:#8cf" href="' + API + '/slide/' + way + '.png?activity=' + activity + '" target="_blank">PNG</a> · <a style="color:#8cf" target="_blank" href="https://www.openstreetmap.org/edit?way=' + way + '">iD</a>';
 }
 $('form').onsubmit = (e) => { e.preventDefault(); run().catch(fail); };
 $('activity').onchange = showHeat;

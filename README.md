@@ -54,12 +54,12 @@ To enable the Strava Heatmap in the iD editor:
 
 ### Strava Slide (iD)
 
-https://github.com/user-attachments/assets/8e15a0e4-30a3-4ea1-860b-60750700e54a
+https://github.com/user-attachments/assets/0b53814f-94b8-4ed1-9380-0b048f3b9e37
 
 With a Strava Heatmap overlay switched on and the extension signed in, an existing line can be snapped to the closest trace of that heatmap. Inspired by [Paul Mach's Slide](https://github.com/paulmach/slide/) and [Strava's iD integration](https://github.com/strava/iD).
 
 1. Log into Strava with the extension and enable a Strava heatmap overlay.
-2. Draw a rough line close to the desired trail (it can start or end on another road or path), or select an existing line.
+2. Draw a rough line along the trail, or select an existing line. It can start and end on other roads or paths: those junctions stay in place, and the line is traced into them.
 3. Press **Shift + S** (also right after drawing), or right-click the selected line and choose **Slide**.
    To slide only part of a way, select two or more of its points instead.
 4. If several Strava overlays are enabled, choose the activity to follow.
@@ -78,7 +78,7 @@ What Slide changes:
 Feedback and test cases are collected in [#43](https://github.com/julcnx/strava-heatmap-extension/issues/43). Always review the result before saving.
 
 - **Parallel trails:** the heat within a few metres of other mapped roads and paths is ignored, and a section that would detour onto another heat trace is left as drawn. A point drawn closer to a stronger trail than to its own can still snap onto it. Workaround: Undo and slide only the sections around it (select two points: the selected end points stay in place), then fix that part by hand. Next step: snap to the closest trail rather than the strongest.
-- **Some lines need a second Slide:** a second Shift+S often smooths the remaining kinks. Next step: repeat automatically until the line stops changing.
+- **Tight switchbacks:** where the legs of a tight switchback merge into one band of heat, Slide cannot see the tip and cuts it short. Workaround: slide the line up to the switchback and from it (select two points), or move the tip by hand. Next step (v0.16.0): keep drawn tips where the heat cannot show them.
 - **"Slide needs too many tiles":** the box around the line must fit in 16 heatmap tiles (about 4 × 4 km, less at high latitudes), so long or diagonal lines are refused. Workaround: select two points and slide the line in sections. Next step (v0.16.0): split long lines into sections automatically, with one Undo.
 
 The extension's shortcuts are also listed in iD's keyboard shortcuts panel (**?**).

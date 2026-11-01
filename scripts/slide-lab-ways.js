@@ -19,15 +19,15 @@ window.SLIDE_LAB_WAYS = [
   "id": "436169752",
   "name": "path",
   "tags": [
-   "fixed"
+   "wontfix"
   ]
  },
  {
   "id": "36964415",
   "name": "Bibbulmun Track",
   "tags": [
-   "fixed",
-   "switchback"
+   "switchback",
+   "fixed"
   ]
  },
  {
@@ -50,7 +50,7 @@ window.SLIDE_LAB_WAYS = [
   "tags": [
    "end",
    "wobbly",
-   "fixed"
+   "wontfix"
   ]
  },
  {
@@ -74,8 +74,8 @@ window.SLIDE_LAB_WAYS = [
   "id": "897542733",
   "name": "path",
   "tags": [
-   "fixed",
-   "jump"
+   "jump",
+   "wontfix"
   ]
  },
  {
@@ -158,7 +158,7 @@ window.SLIDE_LAB_WAYS = [
    "parallel",
    "jump",
    "faint",
-   "fixed"
+   "wontfix"
   ]
  },
  {
@@ -166,7 +166,8 @@ window.SLIDE_LAB_WAYS = [
   "name": "track",
   "tags": [
    "jump",
-   "switchback"
+   "switchback",
+   "fixed"
   ]
  },
  {
@@ -176,7 +177,7 @@ window.SLIDE_LAB_WAYS = [
    "switchback",
    "wobbly",
    "jump",
-   "fixed"
+   "wontfix"
   ]
  },
  {
@@ -205,13 +206,15 @@ window.SLIDE_LAB_WAYS = [
  {
   "id": "77603052",
   "name": "unclassified",
-  "tags": []
+  "tags": [
+   "wontfix"
+  ]
  },
  {
   "id": "360893038",
   "name": "secondary",
   "tags": [
-   "fixed"
+   "wontfix"
   ]
  },
  {
@@ -231,7 +234,9 @@ window.SLIDE_LAB_WAYS = [
  {
   "id": "77602876",
   "name": "residential: straight, faint",
-  "tags": []
+  "tags": [
+   "fixed"
+  ]
  },
  {
   "id": "73051814",
@@ -243,6 +248,8 @@ window.SLIDE_LAB_WAYS = [
  {
   "id": "99288154",
   "name": "unclassified",
-  "tags": []
+  "tags": [
+   "fixed"
+  ]
  }
 ];

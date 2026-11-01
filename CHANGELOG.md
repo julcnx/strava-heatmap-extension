@@ -2,6 +2,10 @@
 
 ## Versions
 
+### Unreleased
+
+- [iD] Keep palette color lookup opaque and apply transparency separately to avoid dark faint tracks on low-precision SVG filter surfaces in Firefox.
+
 ### `0.15.0` (2026-10-26)
 
 - [iD] New **Strava Slide**: press Shift+S, or right-click a line and choose Slide, to snap a roughly drawn line onto the heatmap trail. One Undo restores it. By @rene78 (#43, #45):

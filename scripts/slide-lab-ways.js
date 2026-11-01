@@ -4,12 +4,9 @@ window.SLIDE_LAB_WAYS = [
  {
   "id": "148185960",
   "name": "unclassified",
-  "tags": []
- },
- {
-  "id": "99288154",
-  "name": "unclassified",
-  "tags": []
+  "tags": [
+   "fixed"
+  ]
  },
  {
   "id": "73051811",
@@ -29,7 +26,8 @@ window.SLIDE_LAB_WAYS = [
   "id": "36964415",
   "name": "Bibbulmun Track",
   "tags": [
-   "fixed"
+   "fixed",
+   "switchback"
   ]
  },
  {
@@ -168,7 +166,6 @@ window.SLIDE_LAB_WAYS = [
   "name": "track",
   "tags": [
    "jump",
-   "fixed",
    "switchback"
   ]
  },
@@ -186,14 +183,16 @@ window.SLIDE_LAB_WAYS = [
   "id": "37097733",
   "name": "Rawnsley Bluff Trail",
   "tags": [
-   "switchback"
+   "switchback",
+   "fixed"
   ]
  },
  {
   "id": "1569617536",
   "name": "Nick Eaton Trail #447 (pdxvr): switchback tangle",
   "tags": [
-   "switchback"
+   "switchback",
+   "fixed"
   ]
  },
  {
@@ -202,5 +201,48 @@ window.SLIDE_LAB_WAYS = [
   "tags": [
    "fixed"
   ]
+ },
+ {
+  "id": "77603052",
+  "name": "unclassified",
+  "tags": []
+ },
+ {
+  "id": "360893038",
+  "name": "secondary",
+  "tags": [
+   "fixed"
+  ]
+ },
+ {
+  "id": "70651505",
+  "name": "secondary",
+  "tags": [
+   "fixed"
+  ]
+ },
+ {
+  "id": "99290495",
+  "name": "residential",
+  "tags": [
+   "fixed"
+  ]
+ },
+ {
+  "id": "77602876",
+  "name": "residential: straight, faint",
+  "tags": []
+ },
+ {
+  "id": "73051814",
+  "name": "residential",
+  "tags": [
+   "fixed"
+  ]
+ },
+ {
+  "id": "99288154",
+  "name": "unclassified",
+  "tags": []
  }
 ];

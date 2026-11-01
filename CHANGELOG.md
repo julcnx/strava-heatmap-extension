@@ -2,6 +2,14 @@
 
 ## Versions
 
+### `0.16.0` (2026-11-01)
+
+- [iD] Strava Slide follows the centre of the heatmap band much more closely, especially in bends and switchbacks:
+  - Only fixed points stay in place: every other point moves onto the ridge of the raw heat, which the display colors hide on wide bands
+  - Switchback tips reach into the end of the band instead of stopping short
+  - No closer to other mapped roads and paths than the line or its drawing already is, so it stays off a stronger neighbouring trail
+  - Fewer points on the line
+
 ### `0.15.0` (2026-10-26)
 
 - [iD] New **Strava Slide**: press Shift+S, or right-click a line and choose Slide, to snap a roughly drawn line onto the heatmap trail. One Undo restores it. By @rene78 (#43, #45):

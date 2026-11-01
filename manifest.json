@@ -85,6 +85,7 @@
         "src/clients/www.openstreetmap.org/start.js",
         "src/clients/www.openstreetmap.org/slide/index.js",
         "src/clients/www.openstreetmap.org/slide/algorithm.js",
+        "src/clients/www.openstreetmap.org/slide/junctions.js",
         "src/clients/www.openstreetmap.org/slide/png.js",
         "src/clients/www.openstreetmap.org/slide/action.js",
         "src/clients/www.openstreetmap.org/slide/tiles.js",

@@ -44,7 +44,7 @@
     <option>all</option><option>run</option><option>ride</option><option>sport_Hike</option>
     <option>sport_MountainBikeRide</option><option>winter</option><option>water</option>
   </select>
-  <label title="Experiment: the first and last points may move even when they are junctions"><input type="checkbox" id="moveEnds"> Move ends</label>
+  <label title="Experiment: road and path junctions and free line ends may move to the middle of the band"><input type="checkbox" id="moveEnds"> Move fixed nodes</label>
   <button>Slide</button>
   <span class="legend"><span style="color:#ff3cf0">original</span><span style="color:#00dcff">beta.2</span><span style="color:#7dff3a">result</span><span style="color:#ffffff">fixed</span><span style="color:#3d8bff">other ways (dashed)</span><span style="color:#ffdc00">moved junction</span></span>
   <span id="status"></span>
@@ -85,7 +85,7 @@ function showHeat() {
 // Keep the way, activity and map view in the URL, so a refresh reopens it.
 function saveURL() {
   const c = map.getCenter();
-  history.replaceState(null, '', '?way=' + $('way').value.trim() + '&activity=' + $('activity').value + ($('moveEnds').checked ? '&moveEnds=1' : '') +
+  history.replaceState(null, '', '?way=' + $('way').value.trim() + '&activity=' + $('activity').value + ($('moveEnds').checked ? '' : '&moveEnds=0') +
     '#' + map.getZoom() + '/' + c.lat.toFixed(5) + '/' + c.lng.toFixed(5));
 }
 // Roads and paths in view, from the OSM API: click one to slide it. Loaded
@@ -296,7 +296,7 @@ const params = new URLSearchParams(location.search);
 const view = location.hash.slice(1).split('/').map(Number);
 $('way').value = params.get('way') || '';
 $('activity').value = params.get('activity') || 'all';
-$('moveEnds').checked = params.get('moveEnds') === '1';
+$('moveEnds').checked = params.get('moveEnds') !== '0';
 $('moveEnds').onchange = () => run().catch(fail);
 if (view.length === 3 && view.every(Number.isFinite)) map.setView([view[1], view[2]], view[0]);
 showHeat();

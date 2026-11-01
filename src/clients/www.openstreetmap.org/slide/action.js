@@ -88,6 +88,23 @@ export function fixedIndices(graph, selection) {
   );
 }
 
+// Experiment, used by the Slide lab only: the fixed vertices that may move to
+// the middle of the band. Junctions between roads and paths, which bend with
+// them, and the line's free ends. Tagged nodes, relation members, junctions
+// with anything else (a boundary or landuse would change shape, a bridge is
+// mapped to the structure) and the ends of a partial selection stay.
+export function movableFixedIndices(graph, selection) {
+  const last = selection.nodes.length - 1;
+  return selection.nodes.flatMap((node, i) => {
+    if (Object.keys(node.tags).length || graph.parentRelations(node).length) return [];
+    if ((i === 0 && selection.start > 0) || (i === last && selection.end < selection.way.nodes.length - 1))
+      return [];
+    const others = graph.parentWays(node).filter((way) => way.id !== selection.way.id);
+    if (!others.length) return i === 0 || i === last ? [i] : [];
+    return others.every((way) => way.tags.highway && !isStructure(way)) ? [i] : [];
+  });
+}
+
 export function protectedIndices(graph, selection) {
   return selection.nodes.flatMap((node, i) =>
     Object.keys(node.tags).length ||

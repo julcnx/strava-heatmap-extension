@@ -11,7 +11,7 @@
 //   npm run slide-lab:accept [-- ids]      → record the current results there
 //
 // Options: --activity=run (default all), --dump (print points in PNG pixels),
-// --move-ends (let junction ends move, see slide()), --once (one Slide pass,
+// --move-ends (let fixed nodes move, see slide()), --once (one Slide pass,
 // for debugging).
 //
 // OSM data comes from the public API. Strava tiles come from the web page:
@@ -45,6 +45,7 @@ import {
   fixedIndices,
   getSlideSelection,
   isStructure,
+  movableFixedIndices,
 } from '../src/clients/www.openstreetmap.org/slide/action.js';
 import { loadSlideTiles } from '../src/clients/www.openstreetmap.org/slide/tiles.js';
 import { PALETTES } from '../src/clients/common/palettes.js';
@@ -211,8 +212,8 @@ async function loadGraph(wayId) {
 // --- Slide pipeline (mirrors index.js) -----------------------------------------
 
 // The line's first and last points stay fixed, like in index.js. `moveEnds`:
-// experiment, they may move up to the snap radius, even when they are
-// junctions.
+// experiment, fixed nodes may move to the middle of the band (see
+// movableFixedIndices). iD does not do this: createSlideAction would refuse it.
 export async function slide(wayId, activity, { moveEnds = false, once = false } = {}) {
   const started = Date.now();
   const graph = await loadGraph(wayId);
@@ -269,17 +270,10 @@ export async function slide(wayId, activity, { moveEnds = false, once = false } 
   }
   const raster = createHeatmapRaster(loaded.tiles, loaded.zoom, loaded.bounds);
   const last = selection.nodes.length - 1;
-  const fixed = moveEnds
-    ? fixedIndices(graph, selection).filter(
-        (i) =>
-          (i !== 0 && i !== last) ||
-          Object.keys(selection.nodes[i].tags).length ||
-          graph.parentRelations(selection.nodes[i]).length
-      )
-    : [...new Set([0, last, ...fixedIndices(graph, selection)])];
+  const fixed = [...new Set([0, last, ...fixedIndices(graph, selection)])];
   const result = await (once ? slideLine : slideLineTwice)(locations, raster, {
     fixedIndices: fixed,
-    limitedIndices: moveEnds ? [0, last] : [],
+    movableIndices: moveEnds ? movableFixedIndices(graph, selection) : [],
     otherWays: others.map((other) => other.locs),
     signal,
   });
@@ -690,7 +684,7 @@ function version(ref) {
 async function compared(wayId, activity, options, ref) {
   if (!ref) return null;
   try {
-    const run = await (await version(ref)).slide(wayId, activity, options);
+    const run = await (await version(ref)).slide(wayId, activity);
     return { ref, result: run.result, stats: run.stats };
   } catch (error) {
     return { ref, error: error.message };

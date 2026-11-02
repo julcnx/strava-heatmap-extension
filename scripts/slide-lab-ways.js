@@ -19,7 +19,7 @@ window.SLIDE_LAB_WAYS = [
   "id": "436169752",
   "name": "path",
   "tags": [
-   "wontfix"
+   "fixed"
   ]
  },
  {

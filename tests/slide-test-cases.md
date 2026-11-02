@@ -205,6 +205,37 @@ Start the branch as described in `CLAUDE.md` (version bump and CHANGELOG entry
 as the first commit). Problems 1, 2 and 4 above should be fixed before the
 v0.15.0 release, or moved here if they are not.
 
+### Next: roads get few points, trails keep their detail
+
+Expected complaint: Slide works well on trails but adds many points to city
+streets. Street heat is faint, a few metres wide or slightly wavy, so a straight
+street gets points that follow GPS noise. Lab numbers (Move fixed nodes on):
+
+| Way | Type | Length | Points before → after |
+|---|---|---|---|
+| 77602876 | residential | 140 m | 2 → 9 |
+| 73051814 | residential | 110 m | 5 → 9 |
+| 99290495 | residential | 500 m | 11 → 22 |
+| 1569617536 | path (switchbacks) | 2.2 km | 177 → 163 |
+
+Plan: choose by the way's `highway` tag, no setting.
+
+- Paths, tracks, footways, cycleways, bridleways: unchanged.
+- Roads (residential, unclassified, service, living_street, tertiary and above):
+  1. A drawn segment already within about 3 m of the band centre all along is
+     kept as drawn: no points added, only its existing nodes centred.
+  2. Where the road is reshaped, simplify with about 2.5–3 m tolerance instead
+     of 0.8 m (`CENTRE_TOLERANCE_METERS`), so only real curves keep points.
+
+Check in the lab: point counts and distance from the band centre on the road
+ways (148185960, 73051811, 77603052, 360893038, 70651505, 99290495, 77602876,
+73051814, 99288154), images for each, and `npm run slide-lab:check` showing no
+change on the trails.
+
+Done on 2026-11-02 (local `v0.16.0`, not pushed): road and path junctions and
+free line ends now move onto the band in iD (f78dc27), and saturated bands are
+centred (3b6c6a5, ebe0ea2). Not yet tried in a real iD session.
+
 ### 1. Multi-line Slide
 
 - Select several lines: one Shift+S or menu entry, one Undo.
@@ -231,6 +262,9 @@ v0.15.0 release, or moved here if they are not.
 Cost: about 20 OSM API calls for a 10 km line, the same as panning along it.
 
 ### 3. Split long lines automatically (problem 7)
+
+On hold (2026-11-02): mappers must review every result by hand, and a very long
+slid line makes it easy to overlook mistakes.
 
 1. Split the selected points into consecutive chunks whose padded bounding box
    fits the 16-tile budget, overlapping by a few points.

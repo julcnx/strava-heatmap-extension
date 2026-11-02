@@ -25,6 +25,18 @@ const PALETTES = {
   bluered: 'bluered_dark',
 };
 
+// bluered_dark fades from near-black into its purest blue, which shows as gray
+// on light imagery. Keep its alpha but hold that blue for the fainter intensities.
+const BLUERED_BLUE_INTENSITY = 128;
+
+function holdBlueredBlue(ramp) {
+  const blue = BLUERED_BLUE_INTENSITY * 4;
+  for (let intensity = 0; intensity < BLUERED_BLUE_INTENSITY; intensity++) {
+    ramp.copy(ramp, intensity * 4, blue, blue + 3);
+  }
+  return ramp;
+}
+
 async function download(file) {
   const response = await fetch(`${BASE_URL}/${file}`);
   if (!response.ok) throw new Error(`Failed to download ${file}: ${response.status}`);
@@ -110,7 +122,9 @@ async function main() {
   const lines = Object.entries(PALETTES).map(([name, texture]) => {
     const file = files[`/assets/Shared/Textures/Heatmap/${texture}.png`];
     if (!file) throw new Error(`Ramp texture not found: ${texture}`);
-    return `  ${name}: '${decodeRampPng(file).toString('hex')}',`;
+    const ramp = decodeRampPng(file);
+    if (name === 'bluered') holdBlueredBlue(ramp);
+    return `  ${name}: '${ramp.toString('hex')}',`;
   });
 
   const output = [

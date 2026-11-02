@@ -10,6 +10,12 @@
   - No closer to other mapped roads and paths than the line or its drawing already is, so it stays off a stronger neighbouring trail
   - Fewer points on the line
 
+### `0.15.1` (2026-11-02)
+
+- [iD] Fix faint heatmap tracks showing as dark lines in Firefox. By @tjasz (#47)
+- [iD] Blue-red heatmap: faint tracks are now blue instead of dark gray
+- Layer editor: colors follow the order of Strava's color picker, with Blue-Red last
+
 ### `0.15.0` (2026-10-26)
 
 - [iD] New **Strava Slide**: press Shift+S, or right-click a line and choose Slide, to snap a roughly drawn line onto the heatmap trail. One Undo restores it. By @rene78 (#43, #45):

@@ -2,6 +2,13 @@
 // scripts/slide-lab.mjs when the page saves its list.
 window.SLIDE_LAB_WAYS = [
  {
+  "id": "1569617534",
+  "name": "Gorton Creek Trail #408",
+  "tags": [
+   "fixed"
+  ]
+ },
+ {
   "id": "148185960",
   "name": "unclassified",
   "tags": [
@@ -50,7 +57,7 @@ window.SLIDE_LAB_WAYS = [
   "tags": [
    "end",
    "wobbly",
-   "wontfix"
+   "fixed"
   ]
  },
  {
@@ -177,7 +184,7 @@ window.SLIDE_LAB_WAYS = [
    "switchback",
    "wobbly",
    "jump",
-   "wontfix"
+   "fixed"
   ]
  },
  {
@@ -207,14 +214,14 @@ window.SLIDE_LAB_WAYS = [
   "id": "77603052",
   "name": "unclassified",
   "tags": [
-   "wontfix"
+   "fixed"
   ]
  },
  {
   "id": "360893038",
   "name": "secondary",
   "tags": [
-   "wontfix"
+   "fixed"
   ]
  },
  {

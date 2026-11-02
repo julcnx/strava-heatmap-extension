@@ -1540,6 +1540,12 @@ const ROUTE_CHANGE_COST = 0.02;
 const ROUTE_SHARPNESS = 8;
 const ROUTE_MIN_HEAT = 0.02;
 const ROUTE_EVEN_PASSES = 6;
+// The palette's top (about 0.953): heat at least this high is saturated.
+const SATURATED_HEAT = 0.94;
+// A way joining the line within JOINING_WAY_DEGREES of its direction (over
+// this distance) shares its band this far from the junction.
+const JOINING_WAY_METERS = 40;
+const JOINING_WAY_DEGREES = 45;
 // Heat much stronger than the point's own trail is another trail: at a fork,
 // heat rises into the brighter band with no dip in between.
 const RIDGE_MAX_RISE = 1.3;
@@ -1620,14 +1626,38 @@ const MOVE_FIXED_METERS = 25;
 const MOVE_FIXED_MIN_GAIN = 0.15;
 const JUNCTION_MIN_CROSSING_SINE = 0.5;
 const MOVE_FIXED_MIN_HEAT = 0.04;
+// A junction's climb keeps at least this share of the heat it started on.
+const MOVE_FIXED_KEEP_HEAT = 0.85;
 const COURSE_METERS = 15;
 const THROUGH_BAND_METERS = 20;
 const THROUGH_BAND_MAX_TURN_DEGREES = 25;
+const THROUGH_BAND_FIT_METERS = 30;
 // A straight line accepts a node's new place only this close to its course.
 const COURSE_SIDEWAYS_METERS = 6;
 const OWN_STRETCH_METERS = 25;
 const JUNCTION_SNAP_METERS = 18;
 const JUNCTION_MAX_TURN_DEGREES = 45;
+// Least-squares y = a + b·x + c·x² through `points` ([x, y] pairs, at least 3).
+function fitParabola(points) {
+  const s = [0, 0, 0, 0, 0],
+    t = [0, 0, 0];
+  for (const [x, y] of points) {
+    for (let p = 0; p < 5; p++) s[p] += x ** p;
+    for (let p = 0; p < 3; p++) t[p] += y * x ** p;
+  }
+  const det = (m) =>
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+    m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+    m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+  const m = [
+    [s[0], s[1], s[2]],
+    [s[1], s[2], s[3]],
+    [s[2], s[3], s[4]],
+  ];
+  const d = det(m) || 1;
+  return [0, 1, 2].map((j) => det(m.map((row, r) => row.map((v, col) => (col === j ? t[r] : v)))) / d);
+}
+
 // Experiment: every other way ends at this node, so none passes through it, and
 // it can move like any point of the line: those ways only shift their last point.
 function otherWaysEndAt(loc, otherWays) {
@@ -1767,9 +1797,49 @@ function centreOnBand(records, raster, fixed, otherWays, locations, free = new M
     );
   };
   const step = CENTRE_STEP_METERS / scale;
+  // A way joining the line at a shallow angle runs into its band before the
+  // junction: there it only keeps the line from merging into it at the
+  // junction itself, so its segments that close to the junction are marked
+  // `joining` (see below).
+  const lineIndex = new Map(locations.map((loc, j) => [loc.join(), j]));
   const otherSegments = otherWays.flatMap((way) => {
     const points = way.map((loc) => project(loc, zoom));
-    return points.slice(1).map((b, k) => [points[k], b]);
+    const fromJunction = points.map(() => Infinity);
+    way.forEach((loc, k) => {
+      const j = lineIndex.get(loc.join());
+      if (j === undefined) return;
+      const a = project(locations[Math.max(0, j - 1)], zoom),
+        b = project(locations[Math.min(locations.length - 1, j + 1)], zoom);
+      for (const step of [1, -1]) {
+        const walked = [[k, 0]];
+        for (let m = k, along = 0; m + step >= 0 && m + step < points.length && along < JOINING_WAY_METERS; m += step) {
+          along += Math.hypot(points[m + step][0] - points[m][0], points[m + step][1] - points[m][1]) * scale;
+          walked.push([m + step, along]);
+        }
+        if (walked.length < 2) continue;
+        const end = points[walked[walked.length - 1][0]];
+        const [cx, cy] = [end[0] - points[k][0], end[1] - points[k][1]];
+        const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+        if (
+          Math.abs(cx * dy - cy * dx) >=
+          Math.sin((JOINING_WAY_DEGREES * Math.PI) / 180) * Math.hypot(cx, cy) * Math.hypot(dx, dy)
+        )
+          continue;
+        for (const [m, along] of walked) fromJunction[m] = Math.min(fromJunction[m], along);
+      }
+    });
+    // A segment crossing JOINING_WAY_METERS is split there.
+    const joining = (a, b) => Object.assign([a, b], { joining: true });
+    return points.slice(1).flatMap((b, k) => {
+      const a = points[k],
+        [da, db] = [fromJunction[k], fromJunction[k + 1]];
+      if (Math.max(da, db) <= JOINING_WAY_METERS) return [joining(a, b)];
+      if (Math.min(da, db) >= JOINING_WAY_METERS) return [[a, b]];
+      const t = (JOINING_WAY_METERS - Math.min(da, db)) / (Math.max(da, db) - Math.min(da, db));
+      const [near, far] = da < db ? [a, b] : [b, a];
+      const cut = [near[0] + (far[0] - near[0]) * t, near[1] + (far[1] - near[1]) * t];
+      return [joining(near, cut), [cut, far]];
+    });
   });
   const nearestOn = (p, [a, b]) => {
     const dx = b[0] - a[0],
@@ -1935,8 +2005,10 @@ function centreOnBand(records, raster, fixed, otherWays, locations, free = new M
         const limit = ownHeat[i] * RIDGE_MAX_RISE;
         // No closer to another mapped way than the line or its drawing already
         // is: the drawing shows which side of that way the trail is on, even
-        // when both share one band.
-        const flank = SLIDE_DEFAULTS.otherWayFlankMeters / scale;
+        // when both share one band. A joining way (see otherSegments) only
+        // within otherWayFadeMeters: further out, it is in the line's band.
+        const flank = SLIDE_DEFAULTS.otherWayFlankMeters / scale,
+          fade = SLIDE_DEFAULTS.otherWayFadeMeters / scale;
         const [ox, oy] = origin[i];
         const reachOthers = flank + (ROUTE_OFFSETS * ROUTE_OFFSET_METERS) / scale;
         const nearby = otherSegments.filter(
@@ -1951,22 +2023,28 @@ function centreOnBand(records, raster, fixed, otherWays, locations, free = new M
           Math.min(toSegment(origin[i], segment), toSegment(drawn, segment))
         );
         let best = 0;
+        const plateau = new Float32Array(count);
         for (let k = 0; k < count; k++) {
           const o = offsetAt(k);
           const candidate = [ox + nx * o, oy + ny * o];
           if (
             nearby.some((segment, n) => {
               const away = toSegment(candidate, segment);
-              return away < flank && away < own[n];
+              return away < (segment.joining ? fade : flank) && away < own[n];
             })
           )
             continue;
           const heat = sampleDensity(raster, candidate);
           column[k] = heat <= limit ? heat : Math.max(0, 2 * limit - heat);
           best = Math.max(best, column[k]);
+          if (heat >= SATURATED_HEAT) plateau[k] = depthAt(...candidate);
         }
+        // Where the heat saturates it has no ridge: the middle of the flat top
+        // is the point deepest inside the band.
+        const deepest = Math.max(...plateau);
         if (best > ROUTE_MIN_HEAT)
-          for (let k = 0; k < count; k++) column[k] = (column[k] / best) ** ROUTE_SHARPNESS;
+          for (let k = 0; k < count; k++)
+            column[k] = (deepest > 0 && plateau[k] ? plateau[k] / deepest : column[k] / best) ** ROUTE_SHARPNESS;
         else column.fill(0);
         return column;
       });
@@ -2032,7 +2110,12 @@ function centreOnBand(records, raster, fixed, otherWays, locations, free = new M
       for (const j of [tip - 2, tip, tip + 2]) if (j > 0 && j < c.length - 1) keep[j] = 1;
     for (const sample of riders.keys()) keep[sample] = 1;
     const kept = c.flatMap((_, i) => (keep[i] ? [i] : []));
-    // Reuse the free original nodes, in order, for the nearest kept points.
+    // Reuse the free original nodes, in order, for the nearest kept points. A
+    // kept point nearer a later node is that node's: taking it would move a
+    // node onto its neighbour's place and leave the neighbour without one.
+    const nodeSamples = run.flatMap((record, k) =>
+      k > 0 && k < run.length - 1 && record.nodeIndex !== null && !riders.has(sampleOf[k]) ? [k] : []
+    );
     const owner = new Map([
       [0, run[0].nodeIndex],
       [kept[kept.length - 1], run[run.length - 1].nodeIndex],
@@ -2050,12 +2133,15 @@ function centreOnBand(records, raster, fixed, otherWays, locations, free = new M
       for (let j = nextKept; j < kept.length - 1; j++) {
         if (riders.has(kept[j])) continue;
         const d = Math.hypot(c[kept[j]][0] - points[k][0], c[kept[j]][1] - points[k][1]);
-        if (d < bestDistance) {
+        const later = nodeSamples.some(
+          (m) => m > k && Math.hypot(c[kept[j]][0] - points[m][0], c[kept[j]][1] - points[m][1]) < d
+        );
+        if (!later && d < bestDistance) {
           bestDistance = d;
           best = j;
         }
       }
-      if (best === -1) break;
+      if (best === -1) continue;
       owner.set(kept[best], run[k].nodeIndex);
       nextKept = best + 1;
     }
@@ -2116,10 +2202,30 @@ export async function slideLineTwice(locations, raster, options = {}) {
         [after[0] - here[0], after[1] - here[1]]
       );
       if (turn > THROUGH_BAND_MAX_TURN_DEGREES) continue;
-      const dx = after[0] - before[0],
-        dy = after[1] - before[1];
-      const t = ((here[0] - before[0]) * dx + (here[1] - before[1]) * dy) / (dx * dx + dy * dy || 1);
-      settled[point.nodeIndex] = unproject([before[0] + t * dx, before[1] + t * dy], raster.zoom);
+      const length = Math.hypot(after[0] - before[0], after[1] - before[1]) || 1;
+      const ux = (after[0] - before[0]) / length,
+        uy = (after[1] - before[1]) / length;
+      // Across the chord, the through band follows a parabola fitted to the line
+      // further out on both sides: on a curving road the chord itself runs
+      // inside the bend, and would pull the node off the band.
+      const samples = [
+        before,
+        after,
+        along(k, -1, THROUGH_BAND_FIT_METERS),
+        along(k, 1, THROUGH_BAND_FIT_METERS),
+      ]
+        .filter(Boolean)
+        .map((p) => {
+          const [px, py] = [p[0] - before[0], p[1] - before[1]];
+          return [px * ux + py * uy, py * ux - px * uy];
+        });
+      const x = (here[0] - before[0]) * ux + (here[1] - before[1]) * uy;
+      const [a, b, c] = samples.length > 2 ? fitParabola(samples) : [0, 0, 0];
+      const y = a + b * x + c * x * x;
+      settled[point.nodeIndex] = unproject(
+        [before[0] + ux * x - uy * y, before[1] + uy * x + ux * y],
+        raster.zoom
+      );
     }
     // A node only moves onto heat: without any, nothing says where it belongs.
     // Other ways' geometry and the line's course alone can lead into the dark.
@@ -2320,6 +2426,14 @@ export async function slideLineTwice(locations, raster, options = {}) {
         }
         let target = climbBand(raster, record.loc, depthAt, () => MOVE_FIXED_MIN_GAIN);
         if (target && landsOnOtherStretch(target, k)) target = null;
+        // Between the legs of a hairpin the bands merge and the band is deepest,
+        // but the heat dips: the node would leave its trail.
+        if (
+          target &&
+          sampleDensity(raster, project(target, raster.zoom)) <
+            MOVE_FIXED_KEEP_HEAT * sampleDensity(raster, project(record.loc, raster.zoom))
+        )
+          target = null;
         if (k === 0 || k === smoothed.length - 1) record.loc = target ?? record.loc;
         else free.set(record.nodeIndex, target);
         continue;

@@ -2,6 +2,10 @@
 
 ## Versions
 
+### `0.15.1` (2026-11-02)
+
+- [iD] Fix faint heatmap tracks showing as dark lines in Firefox. By @tjasz (#47)
+
 ### `0.15.0` (2026-10-26)
 
 - [iD] New **Strava Slide**: press Shift+S, or right-click a line and choose Slide, to snap a roughly drawn line onto the heatmap trail. One Undo restores it. By @rene78 (#43, #45):

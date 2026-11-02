@@ -63,7 +63,7 @@ https://github.com/user-attachments/assets/0b53814f-94b8-4ed1-9380-0b048f3b9e37
 With a Strava Heatmap overlay switched on and the extension signed in, an existing line can be snapped to the closest trace of that heatmap. Inspired by [Paul Mach's Slide](https://github.com/paulmach/slide/) and [Strava's iD integration](https://github.com/strava/iD).
 
 1. Log into Strava with the extension and enable a Strava heatmap overlay.
-2. Draw a rough line along the trail, or select an existing line. It can start and end on other roads or paths: those junctions stay in place, and the line is traced into them.
+2. Draw a rough line along the trail, or select an existing line. It can start and end on other roads or paths: the line is traced into those junctions.
 3. Press **Shift + S** (also right after drawing), or right-click the selected line and choose **Slide**.
    To slide only part of a way, select two or more of its points instead.
 4. If several Strava overlays are enabled, choose the activity to follow.
@@ -71,7 +71,8 @@ With a Strava Heatmap overlay switched on and the extension signed in, an existi
 
 What Slide changes:
 
-- The line's first and last points, junctions with other ways, tagged nodes (fords, gates, crossings…) and relation members stay in place: to move one, disconnect it or move it by hand first.
+- Junctions with other roads and paths, and the line's free ends, move onto the middle of the heat band too. A road or path ending at the junction follows it; one passing through keeps its course, the junction only sliding along it.
+- Tagged nodes (fords, gates, crossings…), relation members, junctions with anything other than a road or path (a stream, a boundary…), junctions connected to features hidden in iD and the ends of a partly selected way stay in place: to move one, disconnect it or move it by hand first.
 - Where the line meets another road or path, it does not run along it. The heat of other mapped roads and paths is ignored, so a stronger parallel trail does not pull the line onto it.
 - Sections with no usable heatmap trail are left as drawn, and the rest is slid. A message tells you how many.
 - Near-duplicate points, tiny kinks and spikes are removed. Only untagged nodes not used by anything else are ever deleted.

@@ -42,6 +42,7 @@ import {
 } from '../src/clients/www.openstreetmap.org/slide/algorithm.js';
 import {
   cleanSlideResult,
+  createSlideAction,
   fixedIndices,
   getSlideSelection,
   isStructure,
@@ -140,6 +141,9 @@ class Way {
   isClosed() {
     return this.nodes.length > 2 && this.nodes[0] === this.nodes[this.nodes.length - 1];
   }
+  update({ nodes }) {
+    return new Way(this.id, nodes, this.tags);
+  }
   // Simplified iD rule: Slide only needs to tell lines from areas.
   geometry() {
     return this.isClosed() &&
@@ -160,12 +164,15 @@ class Graph {
     this.relationParents = {};
     for (const e of elements) {
       if (e.type === 'node') {
-        this.entities[`n${e.id}`] = {
+        const node = (loc) => ({
           id: `n${e.id}`,
           type: 'node',
-          loc: [e.lon, e.lat],
+          loc,
           tags: e.tags || {},
-        };
+          // As iD's osmNode: createSlideAction builds the moved nodes with it.
+          move: node,
+        });
+        this.entities[`n${e.id}`] = node([e.lon, e.lat]);
       } else if (e.type === 'way') {
         const way = new Way(`w${e.id}`, e.nodes.map((id) => `n${id}`), e.tags || {});
         this.entities[way.id] = way;
@@ -212,8 +219,8 @@ async function loadGraph(wayId) {
 // --- Slide pipeline (mirrors index.js) -----------------------------------------
 
 // The line's first and last points stay fixed, like in index.js. `moveEnds`:
-// experiment, fixed nodes may move to the middle of the band (see
-// movableFixedIndices). iD does not do this: createSlideAction would refuse it.
+// fixed nodes may move to the middle of the band (see movableFixedIndices),
+// as in iD; off, they stay, as in 0.15.
 export async function slide(wayId, activity, { moveEnds = false, once = false } = {}) {
   const started = Date.now();
   const graph = await loadGraph(wayId);
@@ -278,6 +285,13 @@ export async function slide(wayId, activity, { moveEnds = false, once = false } 
     signal,
   });
   const cleaned = cleanSlideResult(graph, selection, result);
+  // The edit iD would make: its safety checks refuse some results.
+  let refused = null;
+  try {
+    createSlideAction(graph, selection, result, ({ loc }) => ({ id: 'n-new', loc }));
+  } catch (error) {
+    refused = error.message;
+  }
   // Junction ends that moved: in iD, the connected ways would bend with them.
   const movedJunctions = cleaned.flatMap((p) =>
     p.nodeIndex !== null &&
@@ -335,6 +349,7 @@ export async function slide(wayId, activity, { moveEnds = false, once = false } 
       skipped: result.skipped || 0,
       movedJunctions: movedJunctions.length,
       alongOther: cleaned.alongOther || 0,
+      refused,
       ms: Date.now() - started,
     },
   };

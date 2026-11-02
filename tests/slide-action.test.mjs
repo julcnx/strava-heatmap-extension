@@ -8,6 +8,7 @@ import {
   fixedIndices,
   getSlideSelection,
   isStructure,
+  movableFixedIndices,
 } from '../src/clients/www.openstreetmap.org/slide/action.js';
 
 class Node {
@@ -130,18 +131,64 @@ test('every junction stays fixed; free line ends are left to the caller', () => 
   assert.equal(isStructure(new Way('x', [], { bridge: 'no' })), false);
 });
 
-test('moving a junction or a tagged node is refused and nothing is edited', () => {
+test('moving a junction off a way through it, or a tagged node, is refused', () => {
   const result = [
     { loc: at(2, 3), nodeIndex: 0 },
     { loc: at(55, 30), nodeIndex: 1 },
     { loc: at(110, 33), nodeIndex: 2 },
   ];
-  for (const { graph, selection } of [junctionCase(), junctionCase({ ford: 'yes' })]) {
+  for (const { graph, selection } of [
+    junctionCase(),
+    junctionCase({ ford: 'yes' }),
+    junctionCase({}, { waterway: 'stream' }),
+  ]) {
     assert.throws(
       () => createSlideAction(graph, selection, result, factory),
       /protected node/
     );
   }
+});
+
+test('a junction slides along a road or path through it; one ending there follows it', () => {
+  const along = [
+    { loc: at(0, 10), nodeIndex: 0 }, // on the segment a–o2 of the path o
+    { loc: at(55, 30), nodeIndex: 1 },
+    { loc: at(110, 33), nodeIndex: 2 },
+  ];
+  const through = junctionCase();
+  assert.deepEqual(movableFixedIndices(through.graph, through.selection), [0, 2]); // 2: free end
+  const after = createSlideAction(through.graph, through.selection, along, factory)(through.graph);
+  assert.deepEqual(after.entity('a').loc, at(0, 10));
+  assert.deepEqual(after.entity('o').nodes, ['o1', 'a', 'o2']);
+
+  // A path ending at the junction only shifts its last point.
+  const ending = junctionCase();
+  const graph = ending.graph.replace(new Way('o', ['o1', 'a'], { highway: 'path' }));
+  const moved = [{ loc: at(3, 4), nodeIndex: 0 }, ...along.slice(1)];
+  const edited = createSlideAction(graph, ending.selection, moved, factory)(graph);
+  assert.deepEqual(edited.entity('a').loc, at(3, 4));
+  assert.deepEqual(edited.entity('o').nodes, ['o1', 'a']);
+});
+
+test('tagged nodes, relation members, other features and closing nodes never move', () => {
+  // The junction `a` (index 0) stays; the free end `c` may move.
+  const { graph, selection } = junctionCase();
+  const tagged = junctionCase({ ford: 'yes' });
+  assert.deepEqual(movableFixedIndices(tagged.graph, tagged.selection), [2]);
+  assert.deepEqual(movableFixedIndices(new Graph(graph.entities, { a: [{ id: 'r' }] }), selection), [2]);
+  const stream = junctionCase({}, { waterway: 'stream' });
+  assert.deepEqual(movableFixedIndices(stream.graph, stream.selection), [2]);
+  // The first node of a partial selection belongs to the rest of the way too.
+  const partial = { ...selection, start: 1, nodes: selection.nodes.slice(1) };
+  assert.deepEqual(movableFixedIndices(graph, partial), [1]);
+  const nodes = {
+    p: new Node('p', at(0, 0)),
+    q: new Node('q', at(100, 0)),
+    r: new Node('r', at(50, 80)),
+  };
+  const loop = new Way('loop', ['p', 'q', 'r', 'p'], { highway: 'track' });
+  const closed = new Graph({ ...nodes, loop });
+  assert.deepEqual(movableFixedIndices(closed, getSlideSelection(closed, ['loop'])), []);
 });
 
 test('vertices closer than 1.5 m merge; Slide-created ones go first', () => {

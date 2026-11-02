@@ -21,6 +21,7 @@ import {
   getSlideSelection,
   fixedIndices,
   isStructure,
+  movableFixedIndices,
   selectionUnchanged,
 } from './action.js';
 import { loadSlideTiles, slideTileURL } from './tiles.js';
@@ -264,14 +265,18 @@ export async function setupSlide(
         );
         progress.update('Following heatmap density…', 0.35);
         // 2. Merge the tiles into one raster and 3. fit the line to it. Fixed
-        //    indices (tagged nodes, junctions) are passed along so they stay
-        //    put.
+        //    indices (tagged nodes, junctions, the line's ends) are passed
+        //    along; the ones that may still move onto the band (road and path
+        //    junctions, free ends) are passed as movable, unless they connect
+        //    to features hidden in iD, like iD's own Move operation.
         const raster = createHeatmapRaster(loaded.tiles, loaded.zoom, loaded.bounds);
         const result = await slideLineTwice(locations, raster, {
-          // The line's first and last points stay where they were drawn too.
           fixedIndices: [
             ...new Set([0, selection.nodes.length - 1, ...fixedIndices(graph, selection)]),
           ],
+          movableIndices: movableFixedIndices(graph, selection).filter(
+            (i) => !context.features().hasHiddenConnections(selection.nodes[i], graph)
+          ),
           otherWays: others,
           signal: controller.signal,
           onProgress: (value) =>
@@ -398,8 +403,8 @@ export async function setupSlide(
         return 'Select a shorter section (at most 1000 points).';
       if (isStructure(selection.way)) return 'Slide does not move bridges or tunnels.';
       // Missing OSM data around the line is downloaded when Slide runs. Hidden
-      // connected features need not be shown: Slide never moves or deletes a
-      // node shared with another way (junctions stay fixed).
+      // connected features need not be shown: Slide never deletes a node
+      // shared with another way, and moves none connected to a hidden one.
       return false;
     };
     operation.tooltip = () =>

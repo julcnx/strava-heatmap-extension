@@ -9,6 +9,7 @@
   - Switchback tips reach into the end of the band instead of stopping short
   - No closer to other mapped roads and paths than the line or its drawing already is, so it stays off a stronger neighbouring trail
   - Fewer points on the line
+  - Junctions with other roads and paths, and the line's free ends, move onto the band too: a way ending there follows, one passing through keeps its course. Tagged nodes, relation members and junctions with other features still stay in place
 
 ### `0.15.1` (2026-11-02)
 

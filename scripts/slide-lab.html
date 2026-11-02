@@ -44,7 +44,7 @@
     <option>all</option><option>run</option><option>ride</option><option>sport_Hike</option>
     <option>sport_MountainBikeRide</option><option>winter</option><option>water</option>
   </select>
-  <label title="Experiment: road and path junctions and free line ends may move to the middle of the band"><input type="checkbox" id="moveEnds"> Move fixed nodes</label>
+  <label title="Road and path junctions and free line ends may move to the middle of the band, as in iD"><input type="checkbox" id="moveEnds"> Move fixed nodes</label>
   <button>Slide</button>
   <span class="legend"><span style="color:#ff3cf0">original</span><span style="color:#00dcff">beta.2</span><span style="color:#7dff3a">result</span><span style="color:#ffffff">fixed</span><span style="color:#3d8bff">other ways (dashed)</span><span style="color:#ffdc00">moved junction</span></span>
   <span id="status"></span>
@@ -287,7 +287,7 @@ async function slide(way, activity) {
   current = { id: way, name: data.tags.name || data.tags.highway || '' };
   renderList();
   const s = data.stats;
-  $('status').innerHTML = (data.tags.name || data.tags.highway || '') + ': ' + s.pointsBefore + ' → ' + s.pointsAfter + ' points, ' + s.fixed + ' fixed, ' + s.skipped + ' skipped, ' + s.alongOther + ' along other, ' + s.ms + ' ms · ' +
+  $('status').innerHTML = (data.tags.name || data.tags.highway || '') + ': ' + s.pointsBefore + ' → ' + s.pointsAfter + ' points, ' + s.fixed + ' fixed, ' + s.skipped + ' skipped, ' + s.alongOther + ' along other, ' + s.ms + ' ms · ' + (s.refused ? '<span style="color:#ff5050">iD refuses: ' + s.refused.replace(/</g, '&lt;') + '</span> · ' : '') +
     (data.compare ? '<span style="color:#00dcff">' + data.compare.ref + ': ' + (data.compare.error ? data.compare.error.replace(/</g, '&lt;') : data.compare.stats.pointsAfter + ' points, ' + data.compare.stats.skipped + ' skipped') + '</span> · ' : '') + '<a style="color:#8cf" href="' + API + '/slide/' + way + '.png?activity=' + activity + '" target="_blank">PNG</a> · <a style="color:#8cf" target="_blank" href="https://www.openstreetmap.org/edit?way=' + way + '">iD</a>';
 }
 $('form').onsubmit = (e) => { e.preventDefault(); run().catch(fail); };

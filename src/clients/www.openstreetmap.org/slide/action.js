@@ -88,17 +88,20 @@ export function fixedIndices(graph, selection) {
   );
 }
 
-// Experiment, used by the Slide lab only: the fixed vertices that may move to
-// the middle of the band. Junctions between roads and paths, which bend with
-// them, and the line's free ends. Tagged nodes, relation members, junctions
-// with anything else (a boundary or landuse would change shape, a bridge is
-// mapped to the structure) and the ends of a partial selection stay.
+// The fixed vertices that may still move to the middle of the band: junctions
+// between roads and paths, which bend with them, and the line's free ends.
+// Tagged nodes, relation members, junctions with anything else (a boundary or
+// landuse would change shape, a bridge is mapped to the structure), the ends
+// of a partial selection and a loop's closing node stay. A road or path
+// passing through a junction keeps its course: see createSlideAction.
 export function movableFixedIndices(graph, selection) {
   const last = selection.nodes.length - 1;
+  const closed = selection.nodes[0].id === selection.nodes[last].id;
   return selection.nodes.flatMap((node, i) => {
     if (Object.keys(node.tags).length || graph.parentRelations(node).length) return [];
     if ((i === 0 && selection.start > 0) || (i === last && selection.end < selection.way.nodes.length - 1))
       return [];
+    if (closed && (i === 0 || i === last)) return [];
     const others = graph.parentWays(node).filter((way) => way.id !== selection.way.id);
     if (!others.length) return i === 0 || i === last ? [i] : [];
     return others.every((way) => way.tags.highway && !isStructure(way)) ? [i] : [];
@@ -357,6 +360,26 @@ export function selectionUnchanged(before, after, selection) {
   );
 }
 
+// A moved junction must not bend a way passing through it: its new place lies
+// on one of that way's segments next to the node, within THROUGH_WAY_METERS.
+// Ways ending at the node only shift their last point.
+const THROUGH_WAY_METERS = 0.3;
+function keepsThroughWays(graph, selection, node, loc) {
+  return graph
+    .parentWays(node)
+    .filter((way) => way.id !== selection.way.id)
+    .every((way) => {
+      const k = way.nodes.indexOf(node.id);
+      if (k === 0 || k === way.nodes.length - 1) return true;
+      const p = toMeters(loc, node.loc);
+      return [way.nodes[k - 1], way.nodes[k + 1]].some((id) => {
+        const neighbour = toMeters(graph.entity(id).loc, node.loc);
+        const q = nearestOnSegment(p, [0, 0], neighbour).point;
+        return Math.hypot(p[0] - q[0], p[1] - q[1]) <= THROUGH_WAY_METERS;
+      });
+    });
+}
+
 // Build the undoable action: a function graph => graph that
 //   1. verifies nothing changed while Slide was running,
 //   2. moves the retained original nodes and creates nodes for slide-created
@@ -406,9 +429,11 @@ export function createSlideAction(before, selection, result, nodeFactory) {
   }
   const originals = points.filter((point) => point.nodeIndex !== null);
   const fixedNodes = new Set(fixedIndices(before, selection));
+  const movable = new Set(movableFixedIndices(before, selection));
   for (const point of originals) {
     const node = selection.nodes[point.nodeIndex];
-    if (fixedNodes.has(point.nodeIndex) && point.loc.some((v, i) => v !== node.loc[i])) {
+    if (!fixedNodes.has(point.nodeIndex) || point.loc.every((v, i) => v === node.loc[i])) continue;
+    if (!movable.has(point.nodeIndex) || !keepsThroughWays(before, selection, node, point.loc)) {
       throw new Error('Slide attempted to move a protected node. No edits were applied.');
     }
   }

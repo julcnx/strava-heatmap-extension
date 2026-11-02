@@ -437,7 +437,8 @@ function maskOtherWays(raster, otherWays, locations, scale) {
       const value = at(Math.min(d, length));
       if (!falling) {
         // Rising well above the start: another trail's band, not this core.
-        if (value > start / FLANK_CORE) return false;
+        // Saturated heat cannot rise that far, so reaching it counts too.
+        if (value > Math.min(start / FLANK_CORE, SATURATED_HEAT) && value > start) return false;
         falling = value < start * FLANK_CORE;
       } else if (value > FLANK_DARK && value > previous * FLANK_DROP) return false;
       previous = value;

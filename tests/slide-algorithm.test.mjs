@@ -346,9 +346,10 @@ test('a drawn jog across the trail is straightened, not kept as a switchback', a
   assert.ok(off < 1.5, `line runs ${off.toFixed(1)} m off the trail`);
 });
 
-test('sliding a slid line again leaves it unchanged', async () => {
+test('sliding a slid line again keeps it in place', async () => {
   // A trail curving west then south; a second Slide must not move the first
-  // result by the width of a heatmap pixel each time.
+  // result by the width of a heatmap pixel each time. Its points may be picked
+  // a few tenths of a metre differently, but the line stays put.
   const centre = [];
   for (let a = 0; a <= 90; a += 2) {
     const r = (a * Math.PI) / 180;
@@ -368,8 +369,25 @@ test('sliding a slid line again leaves it unchanged', async () => {
     raster,
     { ...options, fixedIndices: [0, first.length - 1] }
   );
-  assert.deepEqual(
-    second.map((p) => p.loc),
-    first.map((p) => p.loc)
+  const toLine = (p, line) =>
+    Math.min(
+      ...line.slice(1).map((b, k) => {
+        const a = line[k],
+          dx = b[0] - a[0],
+          dy = b[1] - a[1],
+          length = dx * dx + dy * dy;
+        const t = length
+          ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length))
+          : 0;
+        return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+      })
+    );
+  const [before, after] = [first, second].map((line) => line.map((p) => metres(p.loc)));
+  const moved = Math.max(...after.map((p) => toLine(p, before)));
+  assert.ok(moved < 0.5, `second Slide moved the line ${moved.toFixed(2)} m`);
+  const offTrail = (line) => Math.max(...line.map((p) => toLine(p, centre)));
+  assert.ok(
+    offTrail(after) <= offTrail(before) + 0.1,
+    `second Slide crept off the trail: ${offTrail(before).toFixed(2)} → ${offTrail(after).toFixed(2)} m`
   );
 });

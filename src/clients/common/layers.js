@@ -1,10 +1,11 @@
-// Available color schemes for the heatmap (see palettes.js)
+// Available color schemes for the heatmap (see palettes.js), in the order of
+// Strava's color picker. Blue-Red is no longer offered there, so it comes last.
 const COLORS = {
-  blue: ['🔵', 'Blue'],
-  purple: ['🟣', 'Purple'],
   orange: ['🟠', 'Orange'],
   sunset: ['🌅', 'Sunset'],
+  blue: ['🔵', 'Blue'],
   pink: ['🌸', 'Pink'],
+  purple: ['🟣', 'Purple'],
   highcontrast: ['⚪', 'Contrast'],
   bluered: ['🔴', 'Blue-Red'],
 };

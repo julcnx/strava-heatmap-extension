@@ -160,6 +160,26 @@ test('vertices closer than 1.5 m merge; Slide-created ones go first', () => {
   );
 });
 
+test('dropped nodes move to Slide-created points before any is created', () => {
+  const { graph, selection } = junctionCase();
+  // b was dropped and three points were created: b takes the nearest one.
+  const result = [
+    { loc: at(0, 0), nodeIndex: 0 },
+    { loc: at(20, 10), nodeIndex: null },
+    { loc: at(50, 30), nodeIndex: null },
+    { loc: at(80, 33), nodeIndex: null },
+    { loc: at(110, 33), nodeIndex: 2 },
+  ];
+  const cleaned = cleanSlideResult(graph, selection, result);
+  assert.deepEqual(
+    cleaned.map((p) => p.nodeIndex),
+    [0, null, 1, null, 2]
+  );
+  assert.deepEqual(cleanSlideResult(graph, selection, cleaned), cleaned);
+  const after = createSlideAction(graph, selection, result, factory)(graph);
+  assert.deepEqual(after.entity('b').loc, at(50, 30));
+});
+
 test('a vertex turning back by more than 150 degrees is removed', () => {
   const { graph, selection } = junctionCase();
   const result = [

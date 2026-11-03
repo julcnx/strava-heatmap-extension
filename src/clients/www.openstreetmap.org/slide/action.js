@@ -301,9 +301,59 @@ export function cleanSlideResult(before, selection, input) {
     if (spike === -1) break;
     kept.splice(spike, 1);
   }
-  const cleaned = kept.map((index) => result[index]);
+  const cleaned = reuseDroppedNodes(before, selection, kept.map((index) => result[index]));
   cleaned.alongOther = result.alongOther;
   return cleaned;
+}
+
+// Move existing nodes before creating new ones, like iD's Circularize: between
+// two kept original vertices, the slide-created points take the originals
+// dropped there, in order, pairing them with the least total distance from
+// where they were drawn. The line keeps its shape; a node is only created
+// where the slid line has more points than the drawing there, and only
+// deleted where it has fewer. Fixed vertices are never reused: they may not
+// move, and one missing from the result is refused by createSlideAction.
+function reuseDroppedNodes(before, selection, points) {
+  const fixed = new Set(fixedIndices(before, selection));
+  const out = points.map((point) => ({ ...point }));
+  const anchors = out.flatMap((point, k) => (point.nodeIndex === null ? [] : [k]));
+  for (let g = 1; g < anchors.length; g++) {
+    const created = [];
+    for (let k = anchors[g - 1] + 1; k < anchors[g]; k++) created.push(k);
+    const dropped = [];
+    for (let i = out[anchors[g - 1]].nodeIndex + 1; i < out[anchors[g]].nodeIndex; i++)
+      if (!fixed.has(i)) dropped.push(i);
+    const n = dropped.length,
+      m = created.length;
+    if (!n || !m) continue;
+    // cost[i][j]: best pairing of the first i dropped and j created points,
+    // where only the longer list may leave some unpaired.
+    const cost = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(Infinity));
+    for (let i = 0; i <= n; i++)
+      for (let j = 0; j <= m; j++) {
+        if (!i && !j) cost[i][j] = 0;
+        if (i && n > m) cost[i][j] = Math.min(cost[i][j], cost[i - 1][j]);
+        if (j && m > n) cost[i][j] = Math.min(cost[i][j], cost[i][j - 1]);
+        if (i && j)
+          cost[i][j] = Math.min(
+            cost[i][j],
+            cost[i - 1][j - 1] +
+              distanceMeters(selection.nodes[dropped[i - 1]].loc, out[created[j - 1]].loc)
+          );
+      }
+    for (let i = n, j = m; i && j; ) {
+      const pair =
+        cost[i - 1][j - 1] +
+        distanceMeters(selection.nodes[dropped[i - 1]].loc, out[created[j - 1]].loc);
+      if (cost[i][j] === pair) {
+        out[created[j - 1]].nodeIndex = dropped[i - 1];
+        i--;
+        j--;
+      } else if (n > m && cost[i][j] === cost[i - 1][j]) i--;
+      else j--;
+    }
+  }
+  return out;
 }
 
 // Fingerprint of everything else that uses a node: the sorted IDs of its

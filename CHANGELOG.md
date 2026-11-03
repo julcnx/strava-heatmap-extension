@@ -2,6 +2,10 @@
 
 ## Versions
 
+### `0.15.2` (2026-11-03)
+
+- [iD] Strava Slide keeps more of the line's existing points: it moves them onto the trail instead of deleting them and adding new ones nearby
+
 ### `0.15.1` (2026-11-02)
 
 - [iD] Fix faint heatmap tracks showing as dark lines in Firefox. By @tjasz (#47)

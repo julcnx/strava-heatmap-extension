@@ -11,6 +11,10 @@
   - Fewer points on the line
   - Junctions with other roads and paths, and the line's free ends, move onto the band too: a way ending there follows, one passing through keeps its course. Tagged nodes, relation members and junctions with other features still stay in place
 
+### `0.15.2` (2026-11-03)
+
+- [iD] Strava Slide keeps more of the line's existing points: it moves them onto the trail instead of deleting them and adding new ones nearby
+
 ### `0.15.1` (2026-11-02)
 
 - [iD] Fix faint heatmap tracks showing as dark lines in Firefox. By @tjasz (#47)

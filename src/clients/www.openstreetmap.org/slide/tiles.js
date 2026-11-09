@@ -60,7 +60,7 @@ export async function loadSlideTiles(locations, source, signal, onProgress) {
   // Upper safety limits: Slide is meant for short sections, and a huge area
   // would stall the editor and hammer Strava's servers.
   if ((bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY) > 4000000) {
-    throw new Error('Slide area is too large. Select a shorter section of the line.');
+    throw new Error('Slide area is too large. Select two points of the line to slide it in sections.');
   }
   // Convert the pixel bounding box to tile indices (1 tile = 512 pixels).
   const minX = Math.floor(bounds.minX / 512),
@@ -68,7 +68,7 @@ export async function loadSlideTiles(locations, source, signal, onProgress) {
   const minY = Math.floor(bounds.minY / 512),
     maxY = Math.floor(bounds.maxY / 512);
   if ((maxX - minX + 1) * (maxY - minY + 1) > 16) {
-    throw new Error('Slide needs too many tiles. Select a shorter section of the line.');
+    throw new Error('Slide needs too many tiles. Select two points of the line to slide it in sections.');
   }
   // Memoised loader per (z, x, y): a tile on a corner of the bounding box is
   // requested once, and the parent-tile fallback below shares the cache too.

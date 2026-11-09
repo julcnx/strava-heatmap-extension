@@ -192,7 +192,7 @@ export function createHeatmapRaster(tiles, zoom = 15, bounds) {
   const width = bounds.maxX - bounds.minX + 1;
   const height = bounds.maxY - bounds.minY + 1;
   if (width < 2 || height < 2 || width * height > 4000000) {
-    throw new Error('Slide area is too large. Select a shorter section of the line.');
+    throw new Error('Slide area is too large. Select two points of the line to slide it in sections.');
   }
   const density = new Float32Array(width * height);
   const coverage = new Uint8Array(width * height);
@@ -1533,7 +1533,7 @@ const FOLD_MAX_METERS = 15;
 // tips are placed from the band's shape, because the two legs' heat merges
 // there and shows no ridge.
 const CENTRE_STEP_METERS = 1.5;
-const CENTRE_TOLERANCE_METERS = 0.8;
+const CENTRE_TOLERANCE_METERS = 1.2;
 const ROUTE_OFFSET_METERS = 0.5;
 const ROUTE_OFFSETS = 16;
 const ROUTE_MAX_CHANGE = 2;
@@ -2351,13 +2351,20 @@ export async function slideLineTwice(locations, raster, options = {}) {
         claimed.set(best, { point, distance: bestDistance });
     }
     // The line's course past a node, leaving out the node's own surroundings.
-    // At the line's end, its direction carried on past the end.
+    // At the line's end, its direction carried on past the end. A node that
+    // stays ends it: the line passes there, wherever the heat beyond it goes.
+    const stays = (record) => fixed.has(record.nodeIndex) && !movable.has(record.nodeIndex);
     const courseAt = (k) => {
       const pixels = smoothed.map((record) => project(record.loc, raster.zoom));
       const walk = (direction) => {
         let along = 0,
           i = k;
-        while (i + direction >= 0 && i + direction < pixels.length && along < COURSE_METERS / scale) {
+        while (
+          i + direction >= 0 &&
+          i + direction < pixels.length &&
+          along < COURSE_METERS / scale &&
+          !(i !== k && stays(smoothed[i]))
+        ) {
           along += Math.hypot(
             pixels[i + direction][0] - pixels[i][0],
             pixels[i + direction][1] - pixels[i][1]

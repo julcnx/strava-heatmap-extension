@@ -142,7 +142,8 @@ The line's bounding box (padded by 92 m) must fit in 16 z15 heatmap tiles
 (about 4 × 4 km, less at high latitudes). The whole box becomes one raster at
 about 14 bytes per pixel, so cost grows with the box area, not the line length.
 
-Planned for v0.16.0: split long lines into overlapping chunks that each fit the
+On hold (see plan item 3), mappers slide long lines in sections. The idea:
+split long lines into overlapping chunks that each fit the
 budget, keep each chunk up to boundary point B, start the next chunk with B fixed
 at its slid position, share the tile cache, then clean and apply one action (one
 Undo) on the joined result.
@@ -205,7 +206,9 @@ Start the branch as described in `CLAUDE.md` (version bump and CHANGELOG entry
 as the first commit). Problems 1, 2 and 4 above should be fixed before the
 v0.15.0 release, or moved here if they are not.
 
-### Next: roads get few points, trails keep their detail
+### Postponed: roads get few points, trails keep their detail
+
+Postponed on 2026-11-09, not for v0.16.0 unless mappers complain.
 
 Expected complaint: Slide works well on trails but adds many points to city
 streets. Street heat is faint, a few metres wide or slightly wavy, so a straight
@@ -236,7 +239,11 @@ Done on 2026-11-02 (local `v0.16.0`, not pushed): road and path junctions and
 free line ends now move onto the band in iD (f78dc27), and saturated bands are
 centred (3b6c6a5, ebe0ea2). Not yet tried in a real iD session.
 
-### 1. Multi-line Slide
+### 1. Postponed: Multi-line Slide
+
+Postponed on 2026-11-09: not critical, and it invites the complaint that
+mappers don't review each slid line (OSM automated-edits concern), like
+splitting long lines (3).
 
 - Select several lines: one Shift+S or menu entry, one Undo.
 - Process the lines one after the other. A junction shared by two selected lines

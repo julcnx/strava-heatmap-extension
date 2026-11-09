@@ -4,7 +4,8 @@ import { PALETTES } from '../common/palettes.js';
 
 async function waitForGpxStudio(maxAttempts = 50, interval = 100) {
   for (let i = 0; i < maxAttempts; i++) {
-    if (window.gpxstudio && typeof window.gpxstudio.ensureLoaded === 'function') {
+    // v2 may drop the v1 methods such as ensureLoaded
+    if (window.gpxstudio && (window.gpxstudio.version === 2 || typeof window.gpxstudio.ensureLoaded === 'function')) {
       console.log('[StravaHeatmapExt] gpx.studio API detected');
       return true;
     }

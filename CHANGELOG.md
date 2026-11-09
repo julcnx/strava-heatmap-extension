@@ -5,6 +5,7 @@
 ### `0.15.3` (2026-11-09)
 
 - [gpx.studio] Heatmap uses Strava's current grayscale tiles, colored in the browser like on strava.com, with gpx.studio's new extension API (v2). Falls back to the legacy pre-colored tiles on older gpx.studio versions
+- [gpx.studio] Remembers which heatmap overlays are shown between sessions (#26)
 
 ### `0.15.2` (2026-11-03)
 

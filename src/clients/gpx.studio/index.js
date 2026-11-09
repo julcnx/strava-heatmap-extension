@@ -67,17 +67,41 @@ function getOverlayStyle(config, color, authenticated) {
   };
 }
 
+// gpx.studio leaves remembering the visible overlays to the extension (API v2)
+const storageKeyVisible = 'strava-heatmap-visible';
+
+function getSavedVisibility() {
+  try {
+    return JSON.parse(localStorage.getItem(storageKeyVisible)) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function saveVisibility(visible) {
+  try {
+    localStorage.setItem(
+      storageKeyVisible,
+      JSON.stringify({ ...getSavedVisibility(), ...visible })
+    );
+  } catch {
+    // storage unavailable: the overlays are just not remembered
+  }
+}
+
 async function applyOverlays(layerPresets, authenticated, version) {
   console.log('[StravaHeatmapExt] Applying overlays to gpx.studio', { layerPresets, authenticated });
 
   if (window.gpxstudio.version === 2) {
     const layerConfigs = getLayerConfigs(layerPresets, authenticated, version, true);
+    const saved = getSavedVisibility();
     window.gpxstudio.setOverlays(
       'Strava Heatmap',
       layerConfigs.map((config, index) => ({
         id: config.id,
         name: config.name,
         style: getOverlayStyle(config, layerPresets[index].color, authenticated),
+        visible: saved[config.id],
       }))
     );
     console.log('[StravaHeatmapExt] Successfully applied overlays to gpx.studio (API v2)');
@@ -133,6 +157,11 @@ async function main() {
 
     // Apply initial overlays
     await applyOverlays(layerPresets, authenticated, version);
+
+    // Remember the overlays the user shows or hides
+    if (window.gpxstudio.version === 2) {
+      window.gpxstudio.onVisibilityChange('Strava Heatmap', saveVisibility);
+    }
 
     // Listen for authentication status changes
     setupAuthStatusChangeListener(async (newAuthenticated) => {

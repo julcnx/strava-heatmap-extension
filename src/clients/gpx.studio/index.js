@@ -1,5 +1,6 @@
 import { setupAuthStatusChangeListener } from '../common/auth.js';
 import { parseLayerPresets, setupLayerPresetsChangeListener, getLayerConfigs } from '../common/layers.js';
+import { PALETTES } from '../common/palettes.js';
 
 async function waitForGpxStudio(maxAttempts = 50, interval = 100) {
   for (let i = 0; i < maxAttempts; i++) {
@@ -12,10 +13,78 @@ async function waitForGpxStudio(maxAttempts = 50, interval = 100) {
   throw new Error('[StravaHeatmapExt] Timeout waiting for gpx.studio API');
 }
 
+// Strava tiles are 512 px; drawing them as 256 keeps the look of the v1 API
+const TILE_SIZE = 256;
+
+// Strava's palette as a color-relief ramp: the intensity (red channel) of the
+// grayscale tile is read as the elevation of a raster-dem source.
+function getColorRamp(color) {
+  const bytes = PALETTES[color].match(/../g).map((hex) => parseInt(hex, 16));
+  const stops = [];
+  for (let i = 0; i < 256; i++) {
+    const [r, g, b, a] = bytes.slice(i * 4, i * 4 + 4);
+    stops.push(i, `rgba(${r},${g},${b},${+(a / 255).toFixed(4)})`);
+  }
+  return ['interpolate', ['linear'], ['elevation'], ...stops];
+}
+
+function getOverlayStyle(config, color, authenticated) {
+  const source = {
+    tiles: [config.template],
+    tileSize: TILE_SIZE,
+    maxzoom: config.zoomExtent[1],
+  };
+  if (!authenticated) {
+    // the logged-out fallback is a plain image
+    return {
+      version: 8,
+      sources: { heatmap: { type: 'raster', ...source } },
+      layers: [{ id: 'heatmap', type: 'raster', source: 'heatmap' }],
+    };
+  }
+  return {
+    version: 8,
+    sources: {
+      heatmap: {
+        type: 'raster-dem',
+        ...source,
+        encoding: 'custom',
+        // green and blue must not be 0: MapLibre divides by the smallest factor
+        redFactor: 1,
+        greenFactor: 1 / 65536,
+        blueFactor: 1 / 65536,
+        baseShift: 0,
+      },
+    },
+    layers: [
+      {
+        id: 'heatmap',
+        type: 'color-relief',
+        source: 'heatmap',
+        paint: { 'color-relief-color': getColorRamp(color) },
+      },
+    ],
+  };
+}
+
 async function applyOverlays(layerPresets, authenticated, version) {
   console.log('[StravaHeatmapExt] Applying overlays to gpx.studio', { layerPresets, authenticated });
 
-  // gpx.studio can't colorize grayscale tiles yet, use legacy pre-colored tiles
+  if (window.gpxstudio.version === 2) {
+    const layerConfigs = getLayerConfigs(layerPresets, authenticated, version, true);
+    window.gpxstudio.setOverlays(
+      'Strava Heatmap',
+      layerConfigs.map((config, index) => ({
+        id: config.id,
+        name: config.name,
+        style: getOverlayStyle(config, layerPresets[index].color, authenticated),
+      }))
+    );
+    console.log('[StravaHeatmapExt] Successfully applied overlays to gpx.studio (API v2)');
+    return;
+  }
+
+  // The v1 API can't colorize grayscale tiles, use legacy pre-colored tiles
   const layerConfigs = getLayerConfigs(layerPresets, authenticated, version, true, true);
 
   window.gpxstudio.filterOverlays(layerConfigs.map((config) => config.id));
@@ -58,7 +127,9 @@ async function main() {
     await waitForGpxStudio();
 
     // Wait until UI is loaded
-    await window.gpxstudio.ensureLoaded();
+    await (window.gpxstudio.version === 2
+      ? window.gpxstudio.ready
+      : window.gpxstudio.ensureLoaded());
 
     // Apply initial overlays
     await applyOverlays(layerPresets, authenticated, version);

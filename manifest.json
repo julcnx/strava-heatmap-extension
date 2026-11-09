@@ -15,7 +15,8 @@
     "*://www.strava.com/*",
     "*://content-a.strava.com/*",
     "*://www.openstreetmap.org/*",
-    "*://gpx.studio/*"
+    "*://gpx.studio/*",
+    "*://dev.gpx.studio/*"
   ],
   "action": {
     "default_popup": ""
@@ -35,7 +36,9 @@
       "matches": [
         "*://www.openstreetmap.org/id*",
         "*://gpx.studio/app*",
-        "*://gpx.studio/*/app*"
+        "*://gpx.studio/*/app*",
+        "*://dev.gpx.studio/app*",
+        "*://dev.gpx.studio/*/app*"
       ],
       "js": [
         "lib/browser-polyfill.min.js",
@@ -70,7 +73,7 @@
         "src/clients/common/layers.js",
         "src/clients/common/palettes.js"
       ],
-      "matches": ["*://www.openstreetmap.org/*", "*://gpx.studio/*"]
+      "matches": ["*://www.openstreetmap.org/*", "*://gpx.studio/*", "*://dev.gpx.studio/*"]
     },
     {
       "resources": [
@@ -98,7 +101,7 @@
         "src/clients/gpx.studio/index.js",
         "src/clients/gpx.studio/index.css"
       ],
-      "matches": ["*://gpx.studio/*"]
+      "matches": ["*://gpx.studio/*", "*://dev.gpx.studio/*"]
     }
   ],
   "icons": {

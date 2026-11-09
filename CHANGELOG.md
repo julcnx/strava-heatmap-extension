@@ -2,6 +2,10 @@
 
 ## Versions
 
+### `0.15.3` (2026-11-09)
+
+- [gpx.studio] Heatmap uses Strava's current grayscale tiles, colored in the browser like on strava.com, with gpx.studio's new extension API (v2). Falls back to the legacy pre-colored tiles on older gpx.studio versions
+
 ### `0.15.2` (2026-11-03)
 
 - [iD] Strava Slide keeps more of the line's existing points: it moves them onto the trail instead of deleting them and adding new ones nearby

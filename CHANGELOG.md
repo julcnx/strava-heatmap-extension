@@ -2,7 +2,7 @@
 
 ## Versions
 
-### `0.16.0` (2026-11-01)
+### `0.15.4` (2026-11-09)
 
 - [iD] Strava Slide follows the centre of the heatmap band much more closely, especially in bends and switchbacks:
   - Only fixed points stay in place: every other point moves onto the ridge of the raw heat, which the display colors hide on wide bands
@@ -10,12 +10,10 @@
   - No closer to other mapped roads and paths than the line or its drawing already is, so it stays off a stronger neighbouring trail
   - Fewer points on the line
   - Junctions with other roads and paths, and the line's free ends, move onto the band too: a way ending there follows, one passing through keeps its course. Tagged nodes, relation members and junctions with other features still stay in place
-
-### `0.15.3` (2026-11-09)
-
-- [gpx.studio] Heatmap uses Strava's current grayscale tiles, colored in the browser like on strava.com, with gpx.studio's new extension API (v2). Falls back to the legacy pre-colored tiles on older gpx.studio versions
-- [gpx.studio] Remembers which heatmap overlays are shown between sessions (#26)
-- [gpx.studio] Also runs on dev.gpx.studio, gpx.studio's development deployment
+- [iD] When a line is too long for Strava Slide, the message says to select two of its points and slide it in sections
+- [gpx.studio] Ready for gpx.studio's new extension API (v2), which applies once gpx.studio deploys it; until then, the heatmap works as before:
+  - Heatmap uses Strava's current grayscale tiles, colored in the browser like on strava.com
+  - Remembers which heatmap overlays are shown between sessions (#26)
 
 ### `0.15.2` (2026-11-03)
 

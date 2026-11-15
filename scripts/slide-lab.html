@@ -46,7 +46,7 @@
   </select>
   <label title="Road and path junctions and free line ends may move to the middle of the band, as in iD"><input type="checkbox" id="moveEnds"> Move fixed nodes</label>
   <button>Slide</button>
-  <span class="legend"><span style="color:#ff3cf0">original</span><span style="color:#00dcff">beta.2</span><span style="color:#7dff3a">result</span><span style="color:#ffffff">fixed</span><span style="color:#3d8bff">other ways (dashed)</span><span style="color:#ffdc00">moved junction</span></span>
+  <span class="legend"><span style="color:#ff3cf0">original</span><span id="compareLegend" style="color:#00dcff">beta.2</span><span style="color:#7dff3a">result</span><span style="color:#ffffff">fixed</span><span style="color:#3d8bff">other ways (dashed)</span><span style="color:#ffdc00">moved junction</span></span>
   <span id="status"></span>
 </form>
 <div id="map"></div>
@@ -59,7 +59,9 @@ const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/servi
 L.control.layers({ None: L.layerGroup().addTo(map), Satellite: satellite }).addTo(map);
 const API = 'http://localhost:8765';
 // Every slide is also run with this version, drawn in cyan under the result.
-const COMPARE = 'v0.15.0-beta.2';
+// Another git ref with ?compare=<ref> in the page URL.
+const COMPARE = new URLSearchParams(location.search).get('compare') || 'v0.15.0-beta.2';
+document.getElementById('compareLegend').textContent = COMPARE;
 // Colorize the grayscale tiles with Strava's orange ramp, like the extension
 // does in iD (src/clients/www.openstreetmap.org/colors.js).
 fetch(API + '/palettes.json').then((r) => r.json()).then((palettes) => {

@@ -1534,6 +1534,15 @@ const FOLD_MAX_METERS = 15;
 // there and shows no ridge.
 const CENTRE_STEP_METERS = 1.5;
 const CENTRE_TOLERANCE_METERS = 1.2;
+// Tip rounding (see the end of centreOnBand): TIP_ROUND_PASSES passes of
+// neighbour averaging over TIP_ROUND_SAMPLES samples either side of each tip
+// spread the turn over several points; a point every TIP_KEEP_EVERY samples of
+// that stretch is kept. Averaging pulls the apex inwards, so TIP_ROUND_GIVE_BACK
+// of that pull is given back, fading out towards the stretch's ends.
+const TIP_ROUND_SAMPLES = 6;
+const TIP_ROUND_PASSES = 10;
+const TIP_KEEP_EVERY = 2;
+const TIP_ROUND_GIVE_BACK = 0.5;
 const ROUTE_OFFSET_METERS = 0.5;
 const ROUTE_OFFSETS = 16;
 const ROUTE_MAX_CHANGE = 2;
@@ -1554,10 +1563,16 @@ const RIDGE_BASE_METERS = 3;
 const FOLD_SPAN_SAMPLES = 3;
 const FOLD_RESTORE_SAMPLES = 10;
 const BAND_RADIUS_METERS = 12;
-const TIP_MIN_TURN_DEGREES = 100;
+const TIP_MIN_TURN_DEGREES = 95;
 const TIP_NEAR_METERS = 8;
 const TIP_FAR_METERS = 20;
 const TIP_EDGE_METERS = 24;
+const TIP_EDGE_DIP = 0.85;
+const TIP_EDGE_RISE = 0.03;
+// Smoothing holds a tip only where the drawn line turns too, at least this much
+// over TIP_FAR_METERS within TIP_NEAR_METERS of it: a hairpin the trace makes
+// in braided or faint heat, where the mapper drew none, is smoothed away.
+const TIP_DRAWN_TURN_DEGREES = 80;
 
 // How far each pixel is inside its band: its distance, in pixels, to where the
 // heat falls below half of the local peak.
@@ -1927,11 +1942,17 @@ function centreOnBand(records, raster, fixed, otherWays, locations, free = new M
       [c[i + span][0] - c[i][0], c[i + span][1] - c[i][1]],
     ];
     const nearTurn = (i) => turnDegrees(...legs(i, near));
+    // A corner smoothing pinned as a hairpin is a tip here on the near test
+    // alone: a pinned corner left out of the tip step is never rounded.
+    const marked = run.flatMap((record, k) => (record.hairpin ? [sampleOf[k]] : []));
+    const isMarked = (i) => marked.some((m) => Math.abs(m - i) <= near);
     for (let i = near; i < c.length - near; i++) {
       const turn = nearTurn(i);
       if (turn < TIP_MIN_TURN_DEGREES) continue;
-      if (i < far || i >= c.length - far) continue;
-      if (turnDegrees(...legs(i, far)) < TIP_MIN_TURN_DEGREES) continue;
+      if (!isMarked(i)) {
+        if (i < far || i >= c.length - far) continue;
+        if (turnDegrees(...legs(i, far)) < TIP_MIN_TURN_DEGREES) continue;
+      }
       let peak = true;
       for (let j = Math.max(near, i - near); j <= Math.min(c.length - near - 1, i + near); j++)
         if (nearTurn(j) > turn) peak = false;
@@ -1944,9 +1965,25 @@ function centreOnBand(records, raster, fixed, otherWays, locations, free = new M
       const length = Math.hypot(ox, oy) || 1;
       ox /= length;
       oy /= length;
-      let edge = 0;
+      // The band's end straight out from the tip. Where the heat falls well
+      // below its brightest on the way out (TIP_EDGE_DIP) and then rises again,
+      // the rise is another trail's heat: the band ends at the dip's bottom.
+      let edge = 0,
+        brightest = 0,
+        low = Infinity,
+        lowAt = 0;
       for (let d = 0; d <= TIP_EDGE_METERS / scale; d += 0.25) {
-        if (depthAt(c[i][0] + ox * d, c[i][1] + oy * d) <= 0.05) break;
+        const [x, y] = [c[i][0] + ox * d, c[i][1] + oy * d];
+        if (depthAt(x, y) <= 0.05) break;
+        const heat = sampleDensity(raster, [x, y]);
+        // Test the rise first: on a faint band the rise past a dip can also be
+        // a new brightest, which would forget the dip.
+        if (low < brightest * TIP_EDGE_DIP && heat > low + TIP_EDGE_RISE) {
+          edge = lowAt;
+          break;
+        }
+        if (heat > brightest) [brightest, low, lowAt] = [heat, heat, d];
+        else if (heat < low) [low, lowAt] = [heat, d];
         edge = d;
       }
       const move = Math.max(0, edge - halfWidth);
@@ -2097,18 +2134,36 @@ function centreOnBand(records, raster, fixed, otherWays, locations, free = new M
     }
     c = c.map((p, i) => (restore.has(i) && i > 0 && i < c.length - 1 ? origin[i].slice() : p));
     // Round each tip over a few points: a single vertex turning back counts as
-    // a spike (see SPIKE_TURN_DEGREES in action.js).
-    for (const tip of tips)
-      for (let pass = 0; pass < 2; pass++) {
+    // a spike (see SPIKE_TURN_DEGREES in action.js), and a tip that smoothing
+    // kept in place (see smoothLine) is otherwise one sharp corner.
+    for (const tip of tips) {
+      const apex = c[tip].slice();
+      for (let pass = 0; pass < TIP_ROUND_PASSES; pass++) {
         const next = c.map((p) => p.slice());
-        for (let j = Math.max(1, tip - 2); j <= Math.min(c.length - 2, tip + 2); j++)
+        const from = Math.max(1, tip - TIP_ROUND_SAMPLES),
+          to = Math.min(c.length - 2, tip + TIP_ROUND_SAMPLES);
+        for (let j = from; j <= to; j++)
           for (const axis of [0, 1])
             next[j][axis] = c[j][axis] / 2 + (c[j - 1][axis] + c[j + 1][axis]) / 4;
         c = next;
       }
+      // Give part of the rounding's pull back (TIP_ROUND_GIVE_BACK at the apex).
+      const dx = apex[0] - c[tip][0],
+        dy = apex[1] - c[tip][1];
+      for (let k = -TIP_ROUND_SAMPLES; k <= TIP_ROUND_SAMPLES; k++) {
+        const j = tip + k;
+        if (j <= 0 || j >= c.length - 1) continue;
+        const w =
+          TIP_ROUND_GIVE_BACK * (1 - (Math.abs(k) / (TIP_ROUND_SAMPLES + 1)) ** 2);
+        c[j] = [c[j][0] + dx * w, c[j][1] + dy * w];
+      }
+    }
     const keep = simplifyKeep(c, CENTRE_TOLERANCE_METERS / scale, raster);
     for (const tip of tips)
-      for (const j of [tip - 2, tip, tip + 2]) if (j > 0 && j < c.length - 1) keep[j] = 1;
+      for (let k = -TIP_ROUND_SAMPLES; k <= TIP_ROUND_SAMPLES; k += TIP_KEEP_EVERY) {
+        const j = tip + k;
+        if (j > 0 && j < c.length - 1) keep[j] = 1;
+      }
     for (const sample of riders.keys()) keep[sample] = 1;
     const kept = c.flatMap((_, i) => (keep[i] ? [i] : []));
     // Reuse the free original nodes, in order, for the nearest kept points. A
@@ -2304,7 +2359,8 @@ export async function slideLineTwice(locations, raster, options = {}) {
       nodeIndex: record.nodeIndex === null ? null : first[record.nodeIndex].nodeIndex,
       drawn: record.drawn,
     })),
-    raster
+    raster,
+    locations
   );
   const otherWays = options.otherWays || [];
   const movable = new Set(options.movableIndices || []);
@@ -2483,19 +2539,120 @@ const SMOOTH_STEP_METERS = 1.5;
 const SMOOTH_PASSES = 24;
 const SMOOTH_TOLERANCE_METERS = 0.4;
 const SMOOTH_MIN_HEAT = 0.5;
-function smoothLine(records, raster) {
+// The distance (pixels) along `points` (pixels) to each of its points.
+function distancesAlong(points) {
+  const along = [0];
+  for (let k = 1; k < points.length; k++)
+    along.push(
+      along[k - 1] +
+        Math.hypot(points[k][0] - points[k - 1][0], points[k][1] - points[k - 1][1])
+    );
+  return along;
+}
+
+// How sharply `points` (pixels) turns at each of its points: the turn between
+// the chords to the points `span` (pixels) behind and ahead along the line, or
+// 0 within `span` of either end. `along` is distancesAlong(points).
+function turnsAlong(points, along, span) {
+  const at = (distance) => {
+    if (distance <= 0) return points[0];
+    if (distance >= along[along.length - 1]) return points[points.length - 1];
+    let k = 1;
+    while (along[k] < distance) k++;
+    const t = (distance - along[k - 1]) / (along[k] - along[k - 1] || 1);
+    return [
+      points[k - 1][0] + (points[k][0] - points[k - 1][0]) * t,
+      points[k - 1][1] + (points[k][1] - points[k - 1][1]) * t,
+    ];
+  };
+  return points.map((p, k) => {
+    if (along[k] < span || along[k] > along[along.length - 1] - span) return 0;
+    const a = at(along[k] - span),
+      b = at(along[k] + span);
+    return turnDegrees([p[0] - a[0], p[1] - a[1]], [b[0] - p[0], b[1] - p[1]]);
+  });
+}
+
+// Indices of the points of `points` (pixels) that are hairpin tips: the line
+// turns at least TIP_MIN_TURN_DEGREES between TIP_NEAR_METERS behind and ahead
+// of it, and more there than at any point within that distance.
+function hairpinTips(points, scale) {
+  const along = distancesAlong(points);
+  const reach = TIP_NEAR_METERS / scale;
+  const turn = turnsAlong(points, along, reach);
+  // A hairpin has legs: it also turns back over TIP_FAR_METERS (as the tip step
+  // in centreOnBand requires). A short hook in the trace does not, nor does a
+  // turn within TIP_FAR_METERS of the line's end, where the trace found the
+  // trail (often a fork).
+  const legs = turnsAlong(points, along, TIP_FAR_METERS / scale);
+  return turn.flatMap((t, k) =>
+    t >= TIP_MIN_TURN_DEGREES &&
+    legs[k] >= TIP_MIN_TURN_DEGREES &&
+    turn.every(
+      (u, j) => Math.abs(along[j] - along[k]) > reach || u < t || (u === t && j >= k)
+    )
+      ? [k]
+      : []
+  );
+}
+
+// For a drawn line (locations), a function giving how sharply it turns near a
+// point (pixels): the largest turn over TIP_FAR_METERS either side, among the
+// line's points (resampled about every metre) within TIP_NEAR_METERS of it.
+function drawnTurnNear(locations, zoom, scale) {
+  const drawn = locations.map((loc) => project(loc, zoom));
+  const samples = [drawn[0]];
+  for (let k = 1; k < drawn.length; k++) {
+    const [a, b] = [drawn[k - 1], drawn[k]];
+    const n = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) * scale));
+    for (let s = 1; s <= n; s++)
+      samples.push([a[0] + ((b[0] - a[0]) * s) / n, a[1] + ((b[1] - a[1]) * s) / n]);
+  }
+  const turns = turnsAlong(samples, distancesAlong(samples), TIP_FAR_METERS / scale);
+  const near = TIP_NEAR_METERS / scale;
+  return (point) =>
+    turns.reduce(
+      (most, turn, k) =>
+        Math.hypot(samples[k][0] - point[0], samples[k][1] - point[1]) <= near
+          ? Math.max(most, turn)
+          : most,
+      0
+    );
+}
+
+function smoothLine(records, raster, drawnLocations = null) {
   const zoom = raster.zoom;
   const scale = metersPerPixel(records[0].loc[1], zoom);
   const step = SMOOTH_STEP_METERS / scale;
   const pinned = records.map(
     (record, k) => k === 0 || k === records.length - 1 || Boolean(record.drawn)
   );
+  // Hairpin tips stay where the trace put them: averaging pulls a tip far
+  // inside its turn (several metres on a switchback), more than centring can
+  // bring back where the two legs' heat merges. Smoothing runs up to each tip
+  // from both sides instead, so the legs still lose their hooks.
+  const points = records.map((record) => project(record.loc, zoom));
+  // A tip is held only where the drawn line turns too: in braided or faint heat
+  // the trace can fold into a hairpin the mapper never drew.
+  const drawnTurn = drawnLocations
+    ? drawnTurnNear(drawnLocations, zoom, scale)
+    : () => 180;
+  const hairpin = new Set(
+    hairpinTips(points, scale).filter(
+      (k) => drawnTurn(points[k]) >= TIP_DRAWN_TURN_DEGREES
+    )
+  );
+  for (const k of hairpin) pinned[k] = true;
   const result = [records[0]];
   for (let from = 0; from < records.length - 1; ) {
     let to = from + 1;
     while (!pinned[to]) to++;
     const run = records.slice(from, to + 1);
-    result.push(...smoothRun(run, raster, step, scale).slice(1));
+    const smoothed = smoothRun(run, raster, step, scale).slice(1);
+    // Mark the pinned tip so centring rounds it too (it pins nothing there).
+    if (hairpin.has(to))
+      smoothed[smoothed.length - 1] = { ...smoothed[smoothed.length - 1], hairpin: true };
+    result.push(...smoothed);
     from = to;
   }
   return result;

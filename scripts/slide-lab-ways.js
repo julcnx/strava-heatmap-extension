@@ -130,7 +130,6 @@ window.SLIDE_LAB_WAYS = [
   "id": "1568166643",
   "name": "path",
   "tags": [
-   "junction",
    "fixed"
   ]
  },
@@ -263,14 +262,16 @@ window.SLIDE_LAB_WAYS = [
   "id": "765245726",
   "name": "Catamount Trail: tight switchbacks (#43 pdxvr, ChugachMTB)",
   "tags": [
-   "switchback"
+   "switchback",
+   "fixed"
   ]
  },
  {
   "id": "239468111",
   "name": "South Fork Valley Trail: switchback tips cut (#43 ChugachMTB)",
   "tags": [
-   "switchback"
+   "switchback",
+   "wontfix"
   ]
  },
  {
@@ -278,7 +279,8 @@ window.SLIDE_LAB_WAYS = [
   "name": "Denali View Trail: junction node 81 moved 10.9 m (#43 ChugachMTB)",
   "tags": [
    "switchback",
-   "junction"
+   "junction",
+   "fixed"
   ]
  },
  {
@@ -286,14 +288,16 @@ window.SLIDE_LAB_WAYS = [
   "name": "Hunter Pass Bikers Trail: crossing node 89 (#43 ChugachMTB)",
   "tags": [
    "switchback",
-   "junction"
+   "junction",
+   "fixed"
   ]
  },
  {
   "id": "332538430",
   "name": "Flattop Sunnyside Trail: junction node 156 drawn 7 m off (#43 ChugachMTB)",
   "tags": [
-   "junction"
+   "junction",
+   "fixed"
   ]
  }
 ];

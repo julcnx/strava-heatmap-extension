@@ -52,7 +52,7 @@ To enable the Strava Heatmap in the iD editor:
 1. Open the iD editor: https://www.openstreetmap.org/edit?editor=id
 2. Press B or click Background settings, then scroll to Overlays.
 3. Select a Strava Heatmap overlay from the list.
-4. If you see the message "Click the Strava Heatmap extension icon to log into Strava…", click the red extension icon to authenticate.
+4. If you see "Log in to Strava" on the map, click the gray extension icon to authenticate.
 5. After logging in, use the extension icon to configure heatmap layers: choose activity type and color, and manage layer order or deletion.
 6. In the editor, press Shift + Q to toggle all overlays (including the heatmap), Shift + H to toggle only the heatmap, and Shift + W to toggle data visibility.
 
@@ -95,12 +95,12 @@ To enable the Strava Heatmap in GPX.studio:
 1. Open GPX.studio: https://gpx.studio/app
 2. Hover over the layers menu icon, then scroll to Overlays.
 3. Choose a Strava Heatmap overlay from the list.
-4. If you see the message "Click the Strava Heatmap extension icon to log into Strava…", click the red extension icon to authenticate.
+4. If you see "Log in to Strava" on the map, click the gray extension icon to authenticate.
 5. Once logged in, use the green extension icon to configure, reorder, or delete heatmap layers by activity and color.
 
 ### Troubleshooting
 
-**Q: “Click the Strava Heatmap extension icon to log into Strava and enable the heatmap.” — What does this mean?**  
+**Q: “Log in to Strava: click the Strava Heatmap extension icon”, what does this mean?**  
 **A:** This message appears if you're not logged in to Strava AND haven’t visited the [Strava Global Heatmap](https://www.strava.com/heatmap). Just click the extension icon to sign in and authorize access.
 
 ### Feature and Bug Requests

@@ -11,6 +11,8 @@
 - Layer editor: colors are shown as swatches of their palettes
 - Layer editor: shows whether you are logged in to Strava, with Sign out and Help, and the version
 - Layer editor: clearer, more compact design that works with the keyboard and screen readers
+- Icon menu: Help, Log in to Strava when logged out, and Clear Strava Cookies renamed to Reset Heatmap Login
+- Clearer "Log in to Strava" message on the map when logged out
 - About page: link to the forum discussion
 
 ### `0.15.4` (2026-11-22)

@@ -161,7 +161,7 @@ function getLayerConfig(
 // and lets the client match tiles to their palette (see www.openstreetmap.org/index.css)
 function getTileTemplate(activity, color, timestamp, authenticated, version, legacy) {
   if (!authenticated) {
-    return `https://raw.githubusercontent.com/julcnx/strava-heatmap-extension/refs/heads/v${version}/assets/heatmap-fallback.png?v=1&z={z}&x={x}&y={y}`;
+    return `https://raw.githubusercontent.com/julcnx/strava-heatmap-extension/refs/heads/v${version}/assets/heatmap-fallback.png?v=2&z={z}&x={x}&y={y}`;
   }
   if (legacy) {
     return `https://content-a.strava.com/identified/globalheat/${activity}/${LEGACY_COLORS[color]}/{z}/{x}/{y}.png?v=19&t=${timestamp}`;

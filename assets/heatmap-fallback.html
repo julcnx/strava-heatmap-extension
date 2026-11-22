@@ -1,69 +1,87 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<!--
+  Source of heatmap-fallback.png, the tile shown while logged out. Render it as
+  512 x 512 px (a 256 px tile, sharp on retina screens), from this folder:
+
+  chrome --headless --hide-scrollbars --window-size=256,256 \
+    --force-device-scale-factor=2 --default-background-color=00000000 \
+    --allow-file-access-from-files --screenshot=heatmap-fallback.png heatmap-fallback.html
+-->
+<html>
   <head>
     <meta charset="UTF-8" />
-    <title>Strava Tile Message</title>
     <style>
       body {
-        background: #222;
         display: flex;
-        justify-content: center;
         align-items: center;
-        height: 100vh;
+        justify-content: center;
+        width: 256px;
+        height: 256px;
+        margin: 0;
+        background: transparent;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       }
-      canvas {
-        border: 1px solid #555;
+
+      .card {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 13px 9px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 10px;
+        background: rgba(23, 25, 30, 0.86);
+        color: white;
+      }
+
+      .icon {
+        position: relative;
+        flex-shrink: 0;
+        width: 34px;
+        height: 34px;
+      }
+
+      .icon img {
+        width: 100%;
+        border-radius: 7px;
+      }
+
+      /* like the badge on the extension icon while logged out */
+      .badge {
+        position: absolute;
+        right: -5px;
+        bottom: -4px;
+        width: 14px;
+        border-radius: 4px;
+        background: #dc3545;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 14px;
+        text-align: center;
+      }
+
+      .title {
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 18px;
+      }
+
+      .hint {
+        color: #cfd4dc;
+        font-size: 11.5px;
+        line-height: 15px;
       }
     </style>
   </head>
   <body>
-    <canvas id="tile" width="256" height="256"></canvas>
-
-    <script>
-      const canvas = document.getElementById('tile');
-      const ctx = canvas.getContext('2d');
-
-      const fontSize = 18;
-      const lineHeight = 24;
-      const padding = 16;
-      const maxWidth = canvas.width - 2 * padding;
-      const font = `bold ${fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
-      const color = '#FC4C02';
-      const message =
-        'Click the Strava Heatmap extension icon to log into Strava and enable the heatmap.';
-
-      ctx.fillStyle = color;
-      ctx.font = font;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-
-      // Text wrapping function returns wrapped lines
-      function getWrappedLines(text, maxWidth) {
-        const words = text.split(' ');
-        const lines = [];
-        let line = '';
-        for (let i = 0; i < words.length; i++) {
-          const testLine = line + words[i] + ' ';
-          const metrics = ctx.measureText(testLine);
-          const testWidth = metrics.width;
-          if (testWidth > maxWidth && i > 0) {
-            lines.push(line.trim());
-            line = words[i] + ' ';
-          } else {
-            line = testLine;
-          }
-        }
-        lines.push(line.trim());
-        return lines;
-      }
-
-      const lines = getWrappedLines(message, maxWidth);
-      const textHeight = lines.length * lineHeight;
-      const startY = (canvas.height - textHeight) / 2;
-
-      lines.forEach((line, i) => {
-        ctx.fillText(line, canvas.width / 2, startY + i * lineHeight);
-      });
-    </script>
+    <div class="card">
+      <div class="icon">
+        <img src="../icons/icon-128-grayscale.png" alt="" />
+        <div class="badge">!</div>
+      </div>
+      <div>
+        <div class="title">Log in to Strava</div>
+        <div class="hint">Click the Strava Heatmap<br />extension icon</div>
+      </div>
+    </div>
   </body>
 </html>

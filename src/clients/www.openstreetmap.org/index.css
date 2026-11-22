@@ -161,14 +161,14 @@ body {
     font-weight: 600;
   }
 
-  /* More specific than iD's button:focus and button:hover */
-  .strava-slide-buttons button.strava-slide-start {
-    background: #fc4c02;
+  /* iD grays focused and hovered buttons */
+  .strava-slide-start {
+    background: #fc4c02 !important;
     color: #fff;
   }
 
-  .strava-slide-buttons button.strava-slide-start:hover {
-    background: #e44402;
+  .strava-slide-start:hover {
+    background: #e44402 !important;
   }
 
   .strava-slide-buttons {

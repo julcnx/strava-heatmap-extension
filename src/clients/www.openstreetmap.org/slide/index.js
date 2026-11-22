@@ -125,7 +125,14 @@ function showProgress(context, controller, sources) {
           start.className = 'strava-slide-start';
           dialog.insertBefore(select, buttons);
           buttons.append(start);
-          start.focus();
+          // Enter in the closed dropdown starts Slide; in the open one it picks.
+          select.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' || !CSS.supports('selector(:open)')) return;
+            if (select.matches(':open')) return;
+            event.preventDefault();
+            start.click();
+          });
+          select.focus();
           const abort = () => reject(new DOMException('Slide cancelled.', 'AbortError'));
           controller.signal.addEventListener('abort', abort, { once: true });
           start.addEventListener(

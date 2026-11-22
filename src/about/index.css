@@ -1,3 +1,29 @@
+:root {
+  color-scheme: light dark;
+  --card: white;
+  --text: #2d3748;
+  --muted: #4a5568;
+  --badge: #edf2f7;
+  --button: #f7fafc;
+  --button-border: #e2e8f0;
+  --button-hover: #edf2f7;
+  --button-hover-border: #cbd5e0;
+}
+
+/* Same as the popup */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --card: #212529;
+    --text: #dee2e6;
+    --muted: #adb5bd;
+    --badge: #343a40;
+    --button: #2b3035;
+    --button-border: #495057;
+    --button-hover: #343a40;
+    --button-hover-border: #6c757d;
+  }
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -15,7 +41,7 @@ body {
 }
 
 .container {
-  background: white;
+  background: var(--card);
   border-radius: 16px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   padding: 3rem 2rem;
@@ -40,21 +66,21 @@ body {
 h1 {
   font-size: 2rem;
   font-weight: 700;
-  color: #2d3748;
+  color: var(--text);
   margin-bottom: 0.5rem;
 }
 
 .message {
   font-size: 1.25rem;
-  color: #4a5568;
+  color: var(--muted);
   margin-bottom: 2.5rem;
   line-height: 1.6;
 }
 
 .version {
   display: inline-block;
-  background: #edf2f7;
-  color: #2d3748;
+  background: var(--badge);
+  color: var(--text);
   padding: 0.25rem 0.75rem;
   border-radius: 12px;
   font-size: 0.875rem;
@@ -88,11 +114,11 @@ h1 {
   padding: 12px 16px;
   min-height: 48px; /* Ensure consistent height */
   box-sizing: border-box;
-  background: #f7fafc;
-  border: 2px solid #e2e8f0;
+  background: var(--button);
+  border: 2px solid var(--button-border);
   border-radius: 12px;
   text-decoration: none;
-  color: #2d3748;
+  color: var(--text);
   font-size: 1rem;
   font-weight: 500;
   transition: all 0.2s;
@@ -100,8 +126,8 @@ h1 {
 }
 
 .action-btn:hover {
-  background: #edf2f7;
-  border-color: #cbd5e0;
+  background: var(--button-hover);
+  border-color: var(--button-hover-border);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }

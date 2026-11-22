@@ -15,7 +15,7 @@
 - Layer editor: clearer, more compact design that follows dark mode and works with the keyboard and screen readers
 - Icon menu: Help, Log in to Strava when logged out, and Clear Strava Cookies renamed to Reset Heatmap Login
 - Clearer "Log in to Strava" message on the map when logged out
-- About page: link to the forum discussion
+- About page: dark mode, and a link to the forum discussion
 
 ### `0.15.4` (2026-11-22)
 

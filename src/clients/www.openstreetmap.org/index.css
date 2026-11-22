@@ -103,6 +103,7 @@ body {
     margin: 0;
     font-size: 16px;
     font-weight: 600;
+    outline: none;
   }
 
   p {
@@ -160,12 +161,13 @@ body {
     font-weight: 600;
   }
 
-  .strava-slide-start {
+  /* More specific than iD's button:focus and button:hover */
+  .strava-slide-buttons button.strava-slide-start {
     background: #fc4c02;
     color: #fff;
   }
 
-  .strava-slide-start:hover {
+  .strava-slide-buttons button.strava-slide-start:hover {
     background: #e44402;
   }
 

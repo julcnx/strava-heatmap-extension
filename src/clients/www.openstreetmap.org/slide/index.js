@@ -73,6 +73,7 @@ function showProgress(context, controller, sources) {
   icon.alt = '';
   const heading = document.createElement('h3');
   heading.textContent = 'Strava Slide';
+  heading.tabIndex = -1;
   header.append(icon, heading);
   const status = document.createElement('p');
   status.setAttribute('role', 'status');
@@ -102,6 +103,8 @@ function showProgress(context, controller, sources) {
   dialog.setAttribute('aria-labelledby', heading.id);
   context.container().node().append(dialog);
   dialog.showModal();
+  // Not on Cancel, the first button: Enter would cancel.
+  heading.focus();
   const chooseSource = () =>
     sources.length === 1
       ? Promise.resolve(sources[0])

@@ -46,7 +46,7 @@
   </select>
   <label title="Road and path junctions and free line ends may move to the middle of the band, as in iD"><input type="checkbox" id="moveEnds"> Move fixed nodes</label>
   <button>Slide</button>
-  <span class="legend"><span style="color:#ff3cf0">original</span><span id="compareLegend" style="color:#00dcff">beta.2</span><span style="color:#7dff3a">result</span><span style="color:#ffffff">fixed</span><span style="color:#3d8bff">other ways (dashed)</span><span style="color:#ffdc00">moved junction</span></span>
+  <span class="legend"><span id="compareLegend" style="color:#00dcff">beta.2</span><span style="color:#7dff3a">result</span><span style="color:#ffffff">fixed</span><span style="color:#3d8bff">other ways (dashed)</span><span style="color:#ffdc00">moved junction</span></span>
   <span id="status"></span>
 </form>
 <div id="map"></div>
@@ -88,7 +88,7 @@ function showHeat() {
 function saveURL() {
   const c = map.getCenter();
   history.replaceState(null, '', '?way=' + $('way').value.trim() + '&activity=' + $('activity').value + ($('moveEnds').checked ? '' : '&moveEnds=0') +
-    '#' + map.getZoom() + '/' + c.lat.toFixed(5) + '/' + c.lng.toFixed(5));
+    (new URLSearchParams(location.search).has('compare') ? '&compare=' + encodeURIComponent(COMPARE) : '') + '#' + map.getZoom() + '/' + c.lat.toFixed(5) + '/' + c.lng.toFixed(5));
 }
 // Roads and paths in view, from the OSM API: click one to slide it. Loaded
 // once per zoom-16 tile, like iD, so panning and zooming reuse what is loaded.
@@ -268,11 +268,12 @@ async function slide(way, activity) {
     loading('Sliding way ' + way + '…');
   }
   if (data.error) { $('status').textContent = data.error; return; }
-  const original = L.polyline(data.original.map(ll), { color: '#ff3cf0', weight: 2, interactive: false }).addTo(layers);
-  data.original.forEach((loc) => L.circleMarker(ll(loc), { radius: 3, color: '#ff3cf0', weight: 1 }).addTo(layers));
+  // The original line is not drawn, only used to frame the view.
+  const original = L.polyline(data.original.map(ll));
+  // Wider than the result, so it still shows where both versions agree.
   if (data.compare?.result) {
-    L.polyline(data.compare.result.map((p) => ll(p.loc)), { color: '#00dcff', weight: 2, interactive: false }).addTo(layers);
-    data.compare.result.forEach((p) => L.circleMarker(ll(p.loc), { radius: 3, color: '#00dcff', weight: 1 }).addTo(layers));
+    L.polyline(data.compare.result.map((p) => ll(p.loc)), { color: '#00dcff', weight: 6, interactive: false }).addTo(layers);
+    data.compare.result.forEach((p) => L.circleMarker(ll(p.loc), { radius: 5, color: '#00dcff', weight: 2 }).addTo(layers));
   }
   L.polyline(data.result.map((p) => ll(p.loc)), { color: '#7dff3a', weight: 2, interactive: false }).addTo(layers);
   data.result.forEach((p) => L.circleMarker(ll(p.loc), { radius: 3, color: '#7dff3a', weight: 1 }).addTo(layers));

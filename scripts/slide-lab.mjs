@@ -699,7 +699,7 @@ function version(ref) {
 async function compared(wayId, activity, options, ref) {
   if (!ref) return null;
   try {
-    const run = await (await version(ref)).slide(wayId, activity);
+    const run = await (await version(ref)).slide(wayId, activity, options);
     return { ref, result: run.result, stats: run.stats };
   } catch (error) {
     return { ref, error: error.message };

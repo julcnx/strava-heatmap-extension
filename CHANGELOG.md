@@ -6,6 +6,7 @@
 
 - [iD] Shift + H hides or shows only the Strava heatmap, Shift + Q still toggles all overlays (#32)
 - [iD] Fix the overlay list's visibility status and help text for iD's new layout
+- [iD] Strava Slide dialog matches the extension's design and iD's light and dark themes
 - Layer editor: a new layer's color or activity is no longer picked automatically
 - Layer editor: Reset to Defaults is only saved with Apply changes
 - Layer editor: colors are shown as swatches of their palettes

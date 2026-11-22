@@ -92,6 +92,7 @@
         "src/clients/www.openstreetmap.org/slide/png.js",
         "src/clients/www.openstreetmap.org/slide/action.js",
         "src/clients/www.openstreetmap.org/slide/tiles.js",
+        "icons/icon-128.png",
         "icons/slide.svg"
       ],
       "matches": ["*://www.openstreetmap.org/*"]

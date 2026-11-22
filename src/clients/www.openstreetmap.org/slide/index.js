@@ -67,8 +67,13 @@ async function installIcon() {
 function showProgress(context, controller, sources) {
   const dialog = document.createElement('dialog');
   dialog.className = 'strava-slide-dialog';
+  const header = document.createElement('header');
+  const icon = document.createElement('img');
+  icon.src = new URL('../../../../icons/icon-128.png', import.meta.url);
+  icon.alt = '';
   const heading = document.createElement('h3');
   heading.textContent = 'Strava Slide';
+  header.append(icon, heading);
   const status = document.createElement('p');
   status.setAttribute('role', 'status');
   status.textContent = 'Loading heatmap…';
@@ -79,6 +84,9 @@ function showProgress(context, controller, sources) {
   cancel.type = 'button';
   cancel.textContent = 'Cancel';
   cancel.addEventListener('click', () => controller.abort());
+  const buttons = document.createElement('div');
+  buttons.className = 'strava-slide-buttons';
+  buttons.append(cancel);
   // Modal dialogs suppress iD's global event handling (its keyboard shortcuts
   // would fire while typing, and map gestures would leak through). Suppress
   // those events here instead of letting them reach iD.
@@ -89,7 +97,7 @@ function showProgress(context, controller, sources) {
     event.preventDefault();
     controller.abort();
   });
-  dialog.append(heading, status, progress, cancel);
+  dialog.append(header, status, progress, buttons);
   heading.id = 'strava-slide-heading';
   dialog.setAttribute('aria-labelledby', heading.id);
   context.container().node().append(dialog);
@@ -111,8 +119,10 @@ function showProgress(context, controller, sources) {
           const start = document.createElement('button');
           start.type = 'button';
           start.textContent = 'Slide';
-          dialog.insertBefore(select, cancel);
-          dialog.insertBefore(start, cancel);
+          start.className = 'strava-slide-start';
+          dialog.insertBefore(select, buttons);
+          buttons.append(start);
+          start.focus();
           const abort = () => reject(new DOMException('Slide cancelled.', 'AbortError'));
           controller.signal.addEventListener('abort', abort, { once: true });
           start.addEventListener(

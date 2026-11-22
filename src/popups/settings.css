@@ -1,14 +1,32 @@
 :root {
+  color-scheme: light dark;
+  --background: #fff;
   --text: #2d3748;
   --muted: #5a6474;
   --border: #cbd5e0;
+  --border-hover: #a0aec0;
   --surface: #f3f5f8;
+  --divider: #e2e8f0;
   --accent: #fc4c02;
+}
+
+/* iD's dark colors */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #212529;
+    --text: #dee2e6;
+    --muted: #adb5bd;
+    --border: #495057;
+    --border-hover: #6c757d;
+    --surface: #2b3035;
+    --divider: #343a40;
+  }
 }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 13px;
+  background: var(--background);
   color: var(--text);
   margin: 0;
   width: 432px;
@@ -37,7 +55,7 @@ header {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--divider);
 
   img {
     border-radius: 9px;
@@ -167,14 +185,14 @@ main {
     appearance: none;
     border: 1px solid var(--border);
     border-radius: 6px;
-    background: white
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='%235a6474' stroke-width='1.5'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E")
+    background: var(--background)
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='%237a8597' stroke-width='1.5'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E")
       no-repeat right 9px center;
   }
 
   .activity:hover,
   .color-button:hover {
-    border-color: #a0aec0;
+    border-color: var(--border-hover);
   }
 
   .activity.invalid,
@@ -186,14 +204,14 @@ main {
     width: 28px;
     height: 28px;
     padding: 0;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235a6474' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 4h11M6 4V2.5h4V4M4 4l.6 9.5h6.8L12 4M6.6 6.7v4.2M9.4 6.7v4.2'/%3E%3C/svg%3E")
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%237a8597' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 4h11M6 4V2.5h4V4M4 4l.6 9.5h6.8L12 4M6.6 6.7v4.2M9.4 6.7v4.2'/%3E%3C/svg%3E")
       no-repeat center;
     border: none;
     border-radius: 6px;
   }
 
   .layer-remove:hover:enabled {
-    background-color: #e2e8f0;
+    background-color: var(--divider);
   }
 
   .layer-remove:disabled {
@@ -207,7 +225,7 @@ main {
   box-sizing: border-box;
   width: 36px;
   height: 14px;
-  border: 1px solid rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(128, 128, 128, 0.5);
   border-radius: 3px;
   background-origin: border-box;
 }
@@ -221,7 +239,7 @@ main {
   padding: 4px;
   overflow-y: auto;
   list-style: none;
-  background: white;
+  background: var(--background);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
@@ -283,6 +301,6 @@ main {
 
 #apply-settings:disabled {
   cursor: not-allowed;
-  background: #e2e8f0;
+  background: var(--divider);
   color: var(--muted);
 }

@@ -36,7 +36,25 @@ body {
       font-weight: 400;
     }
   }
-  &.overlays-hidden {
+  &.strava-hidden:not(.overlays-hidden) {
+    .layer.layer-overlay img[src*='/globalheat/'],
+    .layer.layer-overlay img[src*='/heatmap-fallback.png'] {
+      display: none;
+    }
+    .layer-list.layer-overlay-list .strava-heatmap-label {
+      color: #888;
+    }
+  }
+  &.overlays-hidden.strava-only {
+    .layer.layer-overlay
+      img:not([src*='/globalheat/'], [src*='/heatmap-fallback.png']) {
+      display: none;
+    }
+    .layer-list.layer-overlay-list li label > span:not(.strava-heatmap-label) {
+      color: #888;
+    }
+  }
+  &.overlays-hidden:not(.strava-only) {
     .layer.layer-overlay {
       display: none;
     }

@@ -31,6 +31,15 @@ export async function applyImagery(context, layerPresets, authenticated, version
       terms_url:
         'https://wiki.openstreetmap.org/wiki/Strava#Data_Permission_-_Allowed_for_tracing!',
     });
+    // mark the name, for the overlay list to gray it out when hidden (index.css)
+    const label = source.label;
+    source.label = () => {
+      const append = label();
+      return Object.assign(
+        (selection) => append(selection.classed('strava-heatmap-label', true)),
+        append
+      );
+    };
     imagery.backgrounds.push(source);
   });
 

@@ -4,6 +4,8 @@
 
 ### `0.15.5` (2026-11-22)
 
+- [iD] Shift + H hides or shows only the Strava heatmap, Shift + Q still toggles all overlays (#32)
+
 ### `0.15.4` (2026-11-22)
 
 - [iD] Strava Slide follows the centre of the heatmap band much more closely, especially in bends and switchbacks:

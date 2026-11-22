@@ -4,6 +4,7 @@
 // panel is opened.
 const SHORTCUTS = [
   ['⇧', 'Q', 'Toggle all overlays, including the Strava heatmap'],
+  ['⇧', 'H', 'Toggle only the Strava heatmap'],
   ['⇧', 'W', 'Toggle the OpenStreetMap data'],
   ['⇧', 'S', 'Slide the selected line along the Strava heatmap'],
 ];

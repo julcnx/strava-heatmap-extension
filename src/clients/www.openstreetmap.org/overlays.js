@@ -3,6 +3,9 @@ import { getHashParams } from '../common/hash.js';
 const overlaysHelpVar = `--overlays-help`;
 const overlaysSummaryVar = `--overlays-summary`;
 const overlaysHiddenClass = 'overlays-hidden';
+const stravaHiddenClass = 'strava-hidden';
+// Strava shown while the other overlays are hidden
+const stravaOnlyClass = 'strava-only';
 const storageKeyLastUsed = 'overlays-last-used';
 
 export function bindOverlaysShortcuts(context) {
@@ -12,6 +15,12 @@ export function bindOverlaysShortcuts(context) {
     d3_event.stopImmediatePropagation();
     d3_event.preventDefault();
     toggleOverlaysVisibility();
+  });
+
+  keybinding.on(iD.uiCmd('⇧H'), function (d3_event) {
+    d3_event.stopImmediatePropagation();
+    d3_event.preventDefault();
+    toggleStravaVisibility();
   });
 
   keybinding.on(iD.uiCmd('⇧W'), function (d3_event) {
@@ -60,15 +69,17 @@ export function getDefaultOverlaysHash() {
 }
 
 function updateOverlaySummary() {
-  const status = document.body.classList.contains(overlaysHiddenClass)
-    ? 'Hidden'
-    : 'Visible';
+  const { classList } = document.body;
+  let status = classList.contains(stravaHiddenClass) ? 'Strava hidden' : 'Visible';
+  if (classList.contains(overlaysHiddenClass)) {
+    status = classList.contains(stravaOnlyClass) ? 'Only Strava' : 'Hidden';
+  }
   document.body.style.setProperty(overlaysSummaryVar, `"${status}"`);
 }
 
 function updateOverlaysHelpText() {
   const helpText = [
-    'ℹ️ Use [Shift+Q] to toggle the visibility of all overlays.',
+    'ℹ️ Use [Shift+Q] to toggle the visibility of all overlays, [Shift+H] only the Strava heatmap.',
     'Previously used overlays persist between sessions.',
   ]
     .join(' ')
@@ -78,12 +89,25 @@ function updateOverlaysHelpText() {
 }
 
 function toggleOverlaysVisibility(forceVisible) {
-  const body = document.body;
+  const { classList } = document.body;
   if (forceVisible === true) {
-    body.classList.remove(overlaysHiddenClass);
+    classList.remove(overlaysHiddenClass, stravaHiddenClass);
   } else {
-    body.classList.toggle(overlaysHiddenClass);
+    // Strava is on screen: showing the other overlays keeps it there
+    if (classList.contains(stravaOnlyClass)) classList.remove(stravaHiddenClass);
+    classList.toggle(overlaysHiddenClass);
   }
+  classList.remove(stravaOnlyClass);
+  updateOverlaySummary();
+}
+
+// Only hides the tiles: the layers stay enabled, for Slide and the changeset's
+// imagery. The other overlays stay as they are.
+function toggleStravaVisibility() {
+  const { classList } = document.body;
+  classList.toggle(
+    classList.contains(overlaysHiddenClass) ? stravaOnlyClass : stravaHiddenClass
+  );
   updateOverlaySummary();
 }
 
@@ -110,6 +134,11 @@ export async function injectOverlaysShortcuts() {
       modifiers: ['⇧'],
       shortcuts: ['Q'],
       text: 'Toggle Overlays Visibility',
+    },
+    {
+      modifiers: ['⇧'],
+      shortcuts: ['H'],
+      text: 'Toggle Strava Heatmap Visibility',
     },
     {
       modifiers: ['⇧'],

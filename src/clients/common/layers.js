@@ -1,13 +1,15 @@
+import { PALETTES } from './palettes.js';
+
 // Available color schemes for the heatmap (see palettes.js), in the order of
 // Strava's color picker. Blue-Red is no longer offered there, so it comes last.
 const COLORS = {
-  orange: ['🟠', 'Orange'],
-  sunset: ['🌅', 'Sunset'],
-  blue: ['🔵', 'Blue'],
-  pink: ['🌸', 'Pink'],
-  purple: ['🟣', 'Purple'],
-  highcontrast: ['⚪', 'Contrast'],
-  bluered: ['🔴', 'Blue-Red'],
+  orange: 'Orange',
+  sunset: 'Sunset',
+  blue: 'Blue',
+  pink: 'Pink',
+  purple: 'Purple',
+  highcontrast: 'Contrast',
+  bluered: 'Blue-Red',
 };
 
 // Closest pre-colored legacy tile flavor, for clients that can't colorize
@@ -125,12 +127,22 @@ const ACTIVITY_GROUPS = {
   ]
 };
 
-export const COLOR_OPTIONS = Object.entries(COLORS).map(([key, [, label]]) => [key, label]);
+export const COLOR_OPTIONS = Object.entries(COLORS);
 
 export const ACTIVITY_OPTIONS = Object.entries(ACTIVITY_GROUPS).map(([group, values]) => [
   group,
   values.map((value) => [value, ACTIVITIES[value]]),
 ]);
+
+// Heat intensities a swatch shows, from faint to hot (0 is transparent)
+const SWATCH_STOPS = [8, 20, 40, 70, 110, 160, 210, 255];
+
+// The palette of a color as a CSS background image
+export function getSwatch(color) {
+  if (!PALETTES[color]) return 'none';
+  const stops = SWATCH_STOPS.map((i) => `#${PALETTES[color].slice(i * 8, i * 8 + 6)}`);
+  return `linear-gradient(to right, ${stops.join(', ')})`;
+}
 
 // Creates a layer configuration object
 function getLayerConfig(
@@ -144,14 +156,14 @@ function getLayerConfig(
   legacy
 ) {
   const activityName = ACTIVITIES[activity];
-  const [colorEmoji] = COLORS[color] || '❓';
 
   return {
     id: `strava-heatmap-${activity}`,
-    name: `${new Array(position).join('󠀠')}${colorEmoji} ${
+    // invisible characters, for iD's sorting by name: in order, after the others
+    name: `${'󠀠'.repeat(position)}${
       short ? activityName : `Strava Heatmap ${activityName}`
     }`,
-    description: `Shows ${activityName.toLowerCase()} aggregated, public Strava activities over the last year in ${colorEmoji} color.`,
+    description: `Shows ${activityName.toLowerCase()} aggregated, public Strava activities over the last year in ${COLORS[color] ?? color} color.`,
     template: getTileTemplate(activity, color, timestamp, authenticated, version, legacy),
     zoomExtent: authenticated ? [0, 15] : [0, 20],
   };

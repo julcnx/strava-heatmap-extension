@@ -1,4 +1,4 @@
-import { getLayerConfigs } from '../common/layers.js';
+import { getLayerConfigs, getSwatch } from '../common/layers.js';
 import {
   restoreOverlays,
   bindOverlaysShortcuts,
@@ -24,19 +24,27 @@ export async function applyImagery(context, layerPresets, authenticated, version
   );
 
   // re-add configured strava heatmap layers
-  stravaConfigs.forEach((config) => {
+  stravaConfigs.forEach((config, index) => {
     const source = iD.rendererBackgroundSource({
       ...config,
       overlay: true,
       terms_url:
         'https://wiki.openstreetmap.org/wiki/Strava#Data_Permission_-_Allowed_for_tracing!',
     });
-    // mark the name, for the overlay list to gray it out when hidden (index.css)
+    // show the color as a swatch, and mark the name for the overlay list to gray
+    // it out when hidden (index.css)
     const label = source.label;
     source.label = () => {
       const append = label();
       return Object.assign(
-        (selection) => append(selection.classed('strava-heatmap-label', true)),
+        (selection) => {
+          selection
+            .classed('strava-heatmap-label', true)
+            .append('span')
+            .attr('class', 'strava-heatmap-swatch')
+            .style('background-image', getSwatch(layerPresets[index].color));
+          return append(selection);
+        },
         append
       );
     };

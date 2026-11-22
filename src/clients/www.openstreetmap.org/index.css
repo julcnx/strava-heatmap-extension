@@ -39,6 +39,20 @@ body {
       font-weight: 400;
     }
   }
+  .strava-heatmap-swatch {
+    display: inline-block;
+    width: 26px;
+    height: 11px;
+    margin-right: 7px;
+    border: 1px solid rgba(128, 128, 128, 0.5);
+    border-radius: 3px;
+    background-origin: border-box;
+    vertical-align: -1px;
+  }
+  &.strava-hidden:not(.overlays-hidden) .strava-heatmap-swatch,
+  &.overlays-hidden:not(.strava-only) .strava-heatmap-swatch {
+    opacity: 0.4;
+  }
   &.strava-hidden:not(.overlays-hidden) {
     .layer.layer-overlay img[src*='/globalheat/'],
     .layer.layer-overlay img[src*='/heatmap-fallback.png'] {

@@ -1,16 +1,11 @@
-import { COLOR_OPTIONS } from '../clients/common/layers.js';
-import { PALETTES } from '../clients/common/palettes.js';
-
-// Heat intensities a swatch shows, from faint to hot (0 is transparent)
-const SWATCH_STOPS = [8, 20, 40, 70, 110, 160, 210, 255];
+import { COLOR_OPTIONS, getSwatch } from '../clients/common/layers.js';
 
 let nextId = 0;
 
 function createSwatch(color) {
   const swatch = document.createElement('span');
   swatch.className = 'swatch';
-  const stops = SWATCH_STOPS.map((i) => `#${PALETTES[color].slice(i * 8, i * 8 + 6)}`);
-  swatch.style.backgroundImage = `linear-gradient(to right, ${stops.join(', ')})`;
+  swatch.style.backgroundImage = getSwatch(color);
   return swatch;
 }
 

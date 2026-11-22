@@ -1,6 +1,6 @@
 import { resetCredentials, expireCredentials } from './credentials.js';
-import { isDevelopment } from '../extension.js';
-import { openLogout } from './tabs.js';
+import { getDocUrl, isDevelopment } from '../extension.js';
+import { openLogin, openLogout } from './tabs.js';
 
 const CONTEXT_MENU_ITEMS = [
   {
@@ -9,17 +9,26 @@ const CONTEXT_MENU_ITEMS = [
     action: () => browser.tabs.create({ url: `src/about/index.html` }),
   },
   {
+    id: 'help',
+    title: 'Help',
+    action: () => browser.tabs.create({ url: getDocUrl('README.md') }),
+  },
+  {
     id: 'separator1',
     title: null,
   },
   {
-    id: 'logoutStrava',
-    title: 'Sign out from Strava',
-    action: () => openLogout(),
+    id: 'account',
+    title: 'Log in to Strava',
+    titleAuth: 'Sign out from Strava',
+    action: async (tab) => {
+      const { credentials } = await browser.storage.local.get('credentials');
+      return credentials ? openLogout() : openLogin(tab.id);
+    },
   },
   {
     id: 'resetCookies',
-    title: 'Clear Strava Cookies',
+    title: 'Reset Heatmap Login',
     action: () => resetCredentials(),
     requiresAuth: true,
   },
@@ -65,14 +74,19 @@ export async function updateContextMenuAuth(authenticated) {
         enabled: authenticated,
       });
     }
+    if (item.titleAuth) {
+      await browser.contextMenus.update(item.id, {
+        title: authenticated ? item.titleAuth : item.title,
+      });
+    }
   }
 }
 
-export async function onContextMenuClicked(info) {
+export async function onContextMenuClicked(info, tab) {
   const clickedItem = CONTEXT_MENU_ITEMS.find(({ id }) => id === info.menuItemId);
 
   if (clickedItem?.action) {
-    await clickedItem.action();
+    await clickedItem.action(tab);
   } else {
     console.warn(`Unknown or invalid context menu item clicked: ${info.menuItemId}`);
   }

@@ -2360,7 +2360,8 @@ export async function slideLineTwice(locations, raster, options = {}) {
       drawn: record.drawn,
     })),
     raster,
-    locations
+    locations,
+    fixed
   );
   const otherWays = options.otherWays || [];
   const movable = new Set(options.movableIndices || []);
@@ -2620,7 +2621,7 @@ function drawnTurnNear(locations, zoom, scale) {
     );
 }
 
-function smoothLine(records, raster, drawnLocations = null) {
+function smoothLine(records, raster, drawnLocations = null, fixed = new Set()) {
   const zoom = raster.zoom;
   const scale = metersPerPixel(records[0].loc[1], zoom);
   const step = SMOOTH_STEP_METERS / scale;
@@ -2637,9 +2638,19 @@ function smoothLine(records, raster, drawnLocations = null) {
   const drawnTurn = drawnLocations
     ? drawnTurnNear(drawnLocations, zoom, scale)
     : () => 180;
+  // A fixed vertex (a junction) within TIP_NEAR_METERS is the turn's own tip:
+  // holding another point beside it leaves a kink.
+  const along = distancesAlong(points);
+  const besideFixed = (k) =>
+    records.some(
+      (record, j) =>
+        j !== k &&
+        fixed.has(record.nodeIndex) &&
+        Math.abs(along[j] - along[k]) <= TIP_NEAR_METERS / scale
+    );
   const hairpin = new Set(
     hairpinTips(points, scale).filter(
-      (k) => drawnTurn(points[k]) >= TIP_DRAWN_TURN_DEGREES
+      (k) => drawnTurn(points[k]) >= TIP_DRAWN_TURN_DEGREES && !besideFixed(k)
     )
   );
   for (const k of hairpin) pinned[k] = true;

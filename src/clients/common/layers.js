@@ -125,20 +125,12 @@ const ACTIVITY_GROUPS = {
   ]
 };
 
-export const COLOR_OPTIONS = Object.keys(COLORS).map((key) => [
-  key,
-  formatLayerColor(key),
-]);
+export const COLOR_OPTIONS = Object.entries(COLORS).map(([key, [, label]]) => [key, label]);
 
 export const ACTIVITY_OPTIONS = Object.entries(ACTIVITY_GROUPS).map(([group, values]) => [
   group,
   values.map((value) => [value, ACTIVITIES[value]]),
 ]);
-
-function formatLayerColor(value) {
-  const [emoji, label] = COLORS[value] || ['❓', value];
-  return `${emoji} ${label}`;
-}
 
 // Creates a layer configuration object
 function getLayerConfig(

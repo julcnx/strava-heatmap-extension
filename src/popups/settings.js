@@ -1,25 +1,30 @@
 import Sortable from '../../lib/sortablejs@1.15.0.esm.min.js';
 
-import { getExtensionName } from '../extension.js';
+import { createColorPicker } from './color-picker.js';
+import { openLogout } from '../background/tabs.js';
+import { getDocUrl, getExtensionName } from '../extension.js';
 
 import {
   formatLayerPresets,
   getLayerPresets,
   setLayerPresets,
-  resetLayerPresets,
+  DEFAULT_LAYER_PRESETS,
   validateLayerPresets,
 } from '../background/layers.js';
 
-import { ACTIVITY_OPTIONS, COLOR_OPTIONS } from '../clients/common/layers.js';
+import { ACTIVITY_OPTIONS } from '../clients/common/layers.js';
 
 const MAX_LAYERS = 8;
 
 function createActivitySelect(selected, disabled) {
   const select = document.createElement('select');
+  select.className = 'activity';
+  select.setAttribute('aria-label', 'Activity');
   select.classList.toggle('invalid', selected === undefined);
 
   const placeholder = document.createElement('option');
   placeholder.textContent = '✨ Pick an Activity';
+  placeholder.value = '';
   placeholder.disabled = true;
   placeholder.selected = selected === undefined;
   select.appendChild(placeholder);
@@ -31,31 +36,11 @@ function createActivitySelect(selected, disabled) {
     activities.forEach(([value, label]) => {
       const option = document.createElement('option');
       option.value = value;
-      option.textContent = `📄 ${label}`;
+      option.textContent = label;
       if (disabled.includes(value)) option.disabled = true;
       if (value === selected) option.selected = true;
       optgroup.appendChild(option);
     });
-  });
-  return select;
-}
-
-function createColorPicker(selected) {
-  const select = document.createElement('select');
-  select.classList.toggle('invalid', selected === undefined);
-
-  const placeholder = document.createElement('option');
-  placeholder.textContent = '✨ Pick a Color';
-  placeholder.disabled = true;
-  placeholder.selected = selected === undefined;
-  select.appendChild(placeholder);
-
-  COLOR_OPTIONS.forEach(([value, label]) => {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    if (value === selected) option.selected = true;
-    select.appendChild(option);
   });
   return select;
 }
@@ -74,20 +59,32 @@ function createLayerItem(
   const dragHandle = document.createElement('span');
   dragHandle.className = 'drag-handle';
   dragHandle.textContent = '⠿';
+  // not a <button>: Firefox cannot drag those
+  dragHandle.tabIndex = 0;
+  dragHandle.setAttribute('role', 'button');
+  dragHandle.setAttribute('aria-label', 'Move layer: drag, or use the up and down arrow keys');
+  dragHandle.onkeydown = (event) => {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    if (event.key === 'ArrowUp') li.previousElementSibling?.before(li);
+    else li.nextElementSibling?.after(li);
+    dragHandle.focus();
+    changeCallback();
+  };
 
   const activitySelect = createActivitySelect(layer.activity, disabledActivities);
   activitySelect.onchange = () => changeCallback();
-  const colorSelect = createColorPicker(layer.color);
-  colorSelect.onchange = () => changeCallback();
+  const colorPicker = createColorPicker(layer.color, () => changeCallback());
 
   const deleteButton = document.createElement('button');
   deleteButton.className = 'layer-remove';
   deleteButton.textContent = '🗑️';
+  deleteButton.setAttribute('aria-label', 'Remove layer');
   deleteButton.onclick = () => removeCallback(index);
 
   li.appendChild(dragHandle);
   li.appendChild(activitySelect);
-  li.appendChild(colorSelect);
+  li.appendChild(colorPicker);
   li.appendChild(deleteButton);
 
   return li;
@@ -95,6 +92,9 @@ function createLayerItem(
 
 async function renderLayers(layers) {
   const list = document.getElementById('layer-list');
+  // Drawing the list again must not lose the keyboard focus
+  const focused = document.activeElement;
+  const focusedIndex = [...list.children].indexOf(focused?.closest('.layer'));
   list.innerHTML = '';
 
   layers.forEach((layer, i) => {
@@ -114,12 +114,18 @@ async function renderLayers(layers) {
     list.appendChild(item);
   });
 
+  if (focusedIndex !== -1) {
+    list.children[Math.min(focusedIndex, layers.length - 1)]
+      .querySelector(`.${focused.classList[0]}`)
+      .focus();
+  }
+
   const layerPresets = await getLayerPresets();
   const hasValidChanges =
     validateLayerPresets(layers) &&
     formatLayerPresets(layers) !== formatLayerPresets(layerPresets);
 
-  document.querySelector('#layer-list .layer button').disabled = layers.length === 1;
+  document.querySelector('#layer-list .layer-remove').disabled = layers.length === 1;
   document.getElementById('add-layer').disabled = layers.length >= MAX_LAYERS;
 
   document.getElementById('apply-settings').disabled = !hasValidChanges;
@@ -128,19 +134,37 @@ async function renderLayers(layers) {
 function getCurrentLayers() {
   const items = [...document.querySelectorAll('#layer-list .layer')];
   return items.map((item) => {
-    const selects = item.querySelectorAll('select');
     return {
-      activity: selects[0].value,
-      color: selects[1].value,
+      activity: item.querySelector('.activity').value || undefined,
+      color: item.querySelector('.color-picker').dataset.value || undefined,
     };
   });
 }
 
-document.getElementById('settings-title').textContent = `⚙️ ${getExtensionName()}`;
+document.getElementById('settings-title').textContent = getExtensionName();
+document.getElementById('version').textContent = `v${browser.runtime.getManifest().version}`;
 
 document.addEventListener('DOMContentLoaded', async () => {
   const layerPresets = await getLayerPresets();
   await renderLayers(layerPresets);
+
+  const { credentials } = await browser.storage.local.get('credentials');
+  const loginStatus = document.getElementById('login-status');
+  loginStatus.textContent = credentials
+    ? 'Logged in to Strava'
+    : 'Not logged in to Strava';
+  loginStatus.classList.toggle('logged-in', Boolean(credentials));
+  document.getElementById('sign-out').hidden = !credentials;
+
+  document.getElementById('sign-out').addEventListener('click', async () => {
+    await openLogout();
+    window.close();
+  });
+
+  document.getElementById('help').addEventListener('click', async () => {
+    await browser.tabs.create({ url: getDocUrl('README.md') });
+    window.close();
+  });
 
   const list = document.getElementById('layer-list');
   Sortable.create(list, {
@@ -165,9 +189,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('reset-settings').addEventListener('click', async () => {
-    await resetLayerPresets(true);
-    const layerPresets = await getLayerPresets();
-    await renderLayers(layerPresets);
+    await renderLayers([...DEFAULT_LAYER_PRESETS]);
   });
 
   document.getElementById('apply-settings').addEventListener('click', async () => {

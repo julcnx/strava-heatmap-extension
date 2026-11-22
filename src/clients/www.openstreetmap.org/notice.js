@@ -27,7 +27,8 @@ export function setupHeatmapNotice(context, isAuthenticated) {
           traces and local knowledge.</p>
           <p>Always check traced lines before saving, including the results of Strava Slide
           (<kbd>Shift</kbd>+<kbd>S</kbd>). Hide all overlays, including the heatmap, with
-          <kbd>Shift</kbd>+<kbd>Q</kbd> to compare them with imagery.</p>
+          <kbd>Shift</kbd>+<kbd>Q</kbd>, or only the heatmap with <kbd>Shift</kbd>+<kbd>H</kbd>,
+          to compare them with imagery.</p>
         </div>
         <div class="modal-section buttons cf"><button class="button ok-button action strava-heatmap-notice-ok">I understand</button></div>`;
       let agreed = false;

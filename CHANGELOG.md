@@ -5,6 +5,13 @@
 ### `0.15.5` (2026-11-22)
 
 - [iD] Shift + H hides or shows only the Strava heatmap, Shift + Q still toggles all overlays (#32)
+- [iD] Fix the overlay list's visibility status and help text for iD's new layout
+- Layer editor: a new layer's color or activity is no longer picked automatically
+- Layer editor: Reset to Defaults is only saved with Apply changes
+- Layer editor: colors are shown as swatches of their palettes
+- Layer editor: shows whether you are logged in to Strava, with Sign out and Help, and the version
+- Layer editor: clearer, more compact design that works with the keyboard and screen readers
+- About page: link to the forum discussion
 
 ### `0.15.4` (2026-11-22)
 

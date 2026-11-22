@@ -27,6 +27,10 @@ export async function redirectComplete(tabId, sender) {
   }
 }
 
+export function openLogout() {
+  return browser.tabs.create({ url: 'https://www.strava.com/logout?ext=true' });
+}
+
 export async function openLogin(tabId) {
   // Show notification
   authNotificationId = await showNotification({

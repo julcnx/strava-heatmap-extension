@@ -19,7 +19,6 @@ async function main() {
   injectHeatmapColorFilters();
 
   setupiDCoreContextListener(async (context) => {
-    window.context = context; // DEBUG
     console.log(
       '[StravaHeatmapExt] iD context initialization callback triggered',
       context

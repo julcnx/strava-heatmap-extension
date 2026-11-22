@@ -23,13 +23,16 @@ img[src*='/globalheat/'][src*='heatmap-color=bluered&'] {
 
 body {
   .section.section-overlay-list {
-    .disclosure-wrap::before {
+    .disclosure-content::before {
       content: var(--overlays-help);
       padding-bottom: 8px;
       display: block;
     }
-    h3::after {
-      line-height: 22px;
+    summary.hide-toggle {
+      width: auto;
+    }
+    summary.hide-toggle::after {
+      line-height: 25px;
       content: var(--overlays-summary);
       float: right;
       font-size: 12px;
@@ -59,7 +62,7 @@ body {
       display: none;
     }
     .layer-list.layer-overlay-list li label,
-    .section.section-overlay-list h3 a {
+    .section.section-overlay-list summary.hide-toggle {
       color: #888;
     }
   }

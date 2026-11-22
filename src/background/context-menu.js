@@ -1,5 +1,6 @@
 import { resetCredentials, expireCredentials } from './credentials.js';
 import { isDevelopment } from '../extension.js';
+import { openLogout } from './tabs.js';
 
 const CONTEXT_MENU_ITEMS = [
   {
@@ -14,7 +15,7 @@ const CONTEXT_MENU_ITEMS = [
   {
     id: 'logoutStrava',
     title: 'Sign out from Strava',
-    action: () => browser.tabs.create({ url: 'https://www.strava.com/logout?ext=true' }),
+    action: () => openLogout(),
   },
   {
     id: 'resetCookies',

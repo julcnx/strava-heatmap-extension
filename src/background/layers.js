@@ -1,19 +1,20 @@
-export async function resetLayerPresets(force = false) {
-	const layerPresets = await getLayerPresets();
-	if (layerPresets.length > 0 && !force) return false;
+export const DEFAULT_LAYER_PRESETS = [
+	{ activity: 'all', color: 'orange' },
+	{ activity: 'ride', color: 'purple' },
+	{ activity: 'run', color: 'sunset' },
+	{ activity: 'water', color: 'blue' },
+	{ activity: 'winter', color: 'highcontrast' },
+];
 
-	const defaultLayerPresets = [
-		{ activity: 'all', color: 'orange' },
-		{ activity: 'ride', color: 'purple' },
-		{ activity: 'run', color: 'sunset' },
-		{ activity: 'water', color: 'blue' },
-		{ activity: 'winter', color: 'highcontrast' },
-	];
-	await setLayerPresets(defaultLayerPresets);
+export async function resetLayerPresets() {
+	const layerPresets = await getLayerPresets();
+	if (layerPresets.length > 0) return false;
+
+	await setLayerPresets(DEFAULT_LAYER_PRESETS);
 
 	console.log(
 		'[StravaHeatmapExt] Initializing default layer presets',
-		defaultLayerPresets
+		DEFAULT_LAYER_PRESETS
 	);
 
 	return true;

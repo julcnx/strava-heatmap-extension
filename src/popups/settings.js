@@ -23,7 +23,7 @@ function createActivitySelect(selected, disabled) {
   select.classList.toggle('invalid', selected === undefined);
 
   const placeholder = document.createElement('option');
-  placeholder.textContent = '✨ Pick an Activity';
+  placeholder.textContent = 'Pick an activity';
   placeholder.value = '';
   placeholder.disabled = true;
   placeholder.selected = selected === undefined;
@@ -78,7 +78,6 @@ function createLayerItem(
 
   const deleteButton = document.createElement('button');
   deleteButton.className = 'layer-remove';
-  deleteButton.textContent = '🗑️';
   deleteButton.setAttribute('aria-label', 'Remove layer');
   deleteButton.onclick = () => removeCallback(index);
 

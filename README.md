@@ -96,7 +96,7 @@ To enable the Strava Heatmap in GPX.studio:
 2. Hover over the layers menu icon, then scroll to Overlays.
 3. Choose a Strava Heatmap overlay from the list.
 4. If you see "Log in to Strava" on the map, click the gray extension icon to authenticate.
-5. Once logged in, use the green extension icon to configure, reorder, or delete heatmap layers by activity and color.
+5. Once logged in, use the extension icon to configure, reorder, or delete heatmap layers by activity and color.
 
 ### Troubleshooting
 

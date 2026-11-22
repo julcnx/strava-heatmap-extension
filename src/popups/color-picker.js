@@ -31,7 +31,7 @@ export function createColorPicker(selected, changeCallback) {
   button.setAttribute('aria-expanded', 'false');
   button.setAttribute('aria-label', `Color: ${selectedLabel ?? 'none'}`);
   if (selectedIndex === -1) {
-    button.append('✨ Pick a Color');
+    button.append('Pick a color');
   } else {
     button.append(createSwatch(selected), selectedLabel);
   }

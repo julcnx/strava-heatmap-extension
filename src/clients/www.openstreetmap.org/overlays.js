@@ -165,7 +165,8 @@ export function restoreOverlays(background, overlaysValue) {
       if (source) {
         background.toggleOverlayLayer(source);
       } else {
-        console.warn(`[StravaHeatmapExt] Missing overlay source for restoration: ${id}`);
+        // normal after its layer was removed
+        console.debug(`[StravaHeatmapExt] Missing overlay source for restoration: ${id}`);
       }
     });
 }

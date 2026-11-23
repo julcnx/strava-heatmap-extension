@@ -16,6 +16,7 @@
 - Icon menu: Help, Log in to Strava when logged out, and Clear Strava Cookies renamed to Reset Heatmap Login
 - Clearer "Log in to Strava" message on the map when logged out
 - About page: dark mode, and a link to the forum discussion
+- Fix "Cannot create item with duplicate id" errors from the icon menu when Chrome starts after an update. Reported by @rene78 (#50)
 
 ### `0.15.4` (2026-11-22)
 

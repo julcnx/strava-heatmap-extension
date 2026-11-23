@@ -18,7 +18,7 @@ Release (see CLAUDE.md):
 - [ ] `npm run build`
 - [ ] Push `master` and `v0.15.5`
 - [ ] Upload both zips, and the three screenshots in `images/`, to the Chrome and Firefox stores
-- [ ] Once live: close #32 (Shift + H), tell #43 if Slide changed
+- [ ] Once live: close #32 (Shift + H) and #50 (menu duplicate id errors), tell #43 if Slide changed
 
 ## Next versions
 

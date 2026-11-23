@@ -44,18 +44,37 @@ const CONTEXT_MENU_ITEMS = [
     : []),
 ];
 
-export async function createContextMenu() {
+// onStartup and onInstalled (reason chrome_update) can fire together: rebuild
+// the menu one run at a time, or both runs create the items after removeAll (#50).
+let menuBuilt = Promise.resolve();
+
+export function createContextMenu() {
+  menuBuilt = menuBuilt.then(buildContextMenu);
+  return menuBuilt;
+}
+
+async function buildContextMenu() {
   try {
     // Clear existing menu
     await browser.contextMenus.removeAll();
 
-    // Create submenus dynamically
+    // Create submenus dynamically. create() returns the id, not a promise:
+    // its callback reports when the item exists, or the error.
     const menuPromises = CONTEXT_MENU_ITEMS.map(({ id, title }) => {
-      return browser.contextMenus.create({
-        id,
-        title: title || undefined,
-        type: title ? 'normal' : 'separator',
-        contexts: ['action'],
+      return new Promise((resolve, reject) => {
+        browser.contextMenus.create(
+          {
+            id,
+            title: title || undefined,
+            type: title ? 'normal' : 'separator',
+            contexts: ['action'],
+          },
+          () => {
+            const error = browser.runtime.lastError;
+            if (error) reject(new Error(error.message));
+            else resolve();
+          }
+        );
       });
     });
 

@@ -13,7 +13,7 @@ const STRAVA_COOKIE_NAMES = [
 ];
 
 const VALIDATION_TILE_URL =
-  'https://content-a.strava.com/identified/globalheat/all/hot/8/198/114.png?v=19';
+  'https://content-a.strava.com/identified/globalheat/all/grayscale/8/198/114.png?v=20';
 
 export async function validateCredentials() {
   return new Promise(async (resolve) => {
@@ -36,7 +36,7 @@ async function getCurrentTabId() {
 
 export async function requestCredentials(skipValidation = false) {
   let credentials = await fetchCookies(STRAVA_COOKIE_URL, STRAVA_COOKIE_NAMES);
-  console.debug('[StravaHeatmapExt] Credentials fetched:', credentials);
+  console.debug('[StravaHeatmapExt] Credentials fetched:', Boolean(credentials));
 
   const { credentials: storedCredentials } = await browser.storage.local.get(
     'credentials'
@@ -48,7 +48,7 @@ export async function requestCredentials(skipValidation = false) {
   }
 
   const rules = await updateHeatmapRules(credentials);
-  console.debug('[StravaHeatmapExt] Heatmap rules updated', rules);
+  console.debug('[StravaHeatmapExt] Heatmap rules updated', rules.length);
 
   // Validate credentials by attempting to access a protected tile
   if (credentials && !skipValidation) {
@@ -63,7 +63,7 @@ export async function requestCredentials(skipValidation = false) {
   // Update local storage only if credentials changed
   if (credentials !== storedCredentials) {
     await browser.storage.local.set({ credentials });
-    console.debug('[StravaHeatmapExt] Stored credentials updated', credentials);
+    console.debug('[StravaHeatmapExt] Stored credentials updated', Boolean(credentials));
   }
 
   // Detect authentication state changes
@@ -141,7 +141,7 @@ export async function resetCredentials() {
 export async function expireCredentials() {
   // Set expired credentials (from a past date)
   const expiredCredentials =
-    '_strava_idcf=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE2MDAwMDAwMDAsImlhdCI6MTYwMDAwMDAwMCwiYXRobGV0ZUlkIjo5OTk5OTk5OSwidGltZXN0YW1wIjoxNjAwMDAwMDAwfQ.invalid; CloudFront-Key-Pair-Id=INVALID; CloudFront-Policy=eyJTdGF0ZW1lbnQiOiBbeyJSZXNvdXJjZSI6Imh0dHBzOi8vKi5zdHJhdmEuY29tLyoiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE2MDAwMDAwMDB9fX1dfQ==; CloudFront-Signature=InvalidSignature';
+    '_strava_idcf=EXPIRED-NOT-A-REAL-TOKEN; CloudFront-Key-Pair-Id=INVALID; CloudFront-Policy=EXPIRED-NOT-A-REAL-POLICY; CloudFront-Signature=InvalidSignature';
 
   await clearCookies(STRAVA_COOKIE_URL, STRAVA_COOKIE_NAMES);
   await browser.storage.local.set({

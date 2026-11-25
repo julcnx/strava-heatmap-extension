@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Strava Heatmap [DEV]",
   "description": "Overlay Strava Global Heatmap in iD & GPX.studio editors to reveal popular routes and patterns.",
-  "version": "0.13.6",
+  "version": "0.15.4",
   "homepage_url": "https://github.com/julcnx/strava-heatmap-extension",
   "permissions": [
     "cookies",
@@ -17,6 +17,7 @@
     "*://www.openstreetmap.org/*",
     "*://gpx.studio/*",
     "*://bikerouter.de/*"
+    "*://dev.gpx.studio/*"
   ],
   "action": {
     "default_popup": ""
@@ -38,6 +39,8 @@
         "*://gpx.studio/app*",
         "*://gpx.studio/*/app*",
         "*://bikerouter.de/*"
+        "*://dev.gpx.studio/app*",
+        "*://dev.gpx.studio/*/app*"
       ],
       "js": [
         "lib/browser-polyfill.min.js",
@@ -69,22 +72,29 @@
       "resources": [
         "src/clients/common/auth.js",
         "src/clients/common/hash.js",
-        "src/clients/common/layers.js"
+        "src/clients/common/layers.js",
+        "src/clients/common/palettes.js"
       ],
-      "matches": [
-        "*://www.openstreetmap.org/*",
-        "*://gpx.studio/*",
-        "*://bikerouter.de/*"
-      ]
+      "matches": ["*://www.openstreetmap.org/*", "*://gpx.studio/*", "*://dev.gpx.studio/*", "*://bikerouter.de/*"]
     },
     {
       "resources": [
+        "src/clients/www.openstreetmap.org/colors.js",
         "src/clients/www.openstreetmap.org/id.js",
         "src/clients/www.openstreetmap.org/imagery.js",
         "src/clients/www.openstreetmap.org/index.css",
         "src/clients/www.openstreetmap.org/index.js",
+        "src/clients/www.openstreetmap.org/notice.js",
         "src/clients/www.openstreetmap.org/overlays.js",
-        "src/clients/www.openstreetmap.org/start.js"
+        "src/clients/www.openstreetmap.org/shortcuts.js",
+        "src/clients/www.openstreetmap.org/start.js",
+        "src/clients/www.openstreetmap.org/slide/index.js",
+        "src/clients/www.openstreetmap.org/slide/algorithm.js",
+        "src/clients/www.openstreetmap.org/slide/junctions.js",
+        "src/clients/www.openstreetmap.org/slide/png.js",
+        "src/clients/www.openstreetmap.org/slide/action.js",
+        "src/clients/www.openstreetmap.org/slide/tiles.js",
+        "icons/slide.svg"
       ],
       "matches": ["*://www.openstreetmap.org/*"]
     },
@@ -93,7 +103,7 @@
         "src/clients/gpx.studio/index.js",
         "src/clients/gpx.studio/index.css"
       ],
-      "matches": ["*://gpx.studio/*"]
+      "matches": ["*://gpx.studio/*", "*://dev.gpx.studio/*"]
       },
     {
       "resources": [

@@ -34,8 +34,24 @@ function getProductionName(name) {
   return name.replace(/\s*\[DEV\]\s*$/, '').trim();
 }
 
+// Remove dev.gpx.studio (gpx.studio's development deployment, for testing):
+// a new host would make Chrome disable the extension on update until users
+// approve it.
+function withoutDevHosts(manifest) {
+  const keep = (patterns) => patterns.filter((pattern) => !pattern.includes('dev.gpx.studio'));
+  return {
+    ...manifest,
+    host_permissions: keep(manifest.host_permissions),
+    content_scripts: manifest.content_scripts.map((entry) => ({ ...entry, matches: keep(entry.matches) })),
+    web_accessible_resources: manifest.web_accessible_resources.map((entry) => ({
+      ...entry,
+      matches: keep(entry.matches),
+    })),
+  };
+}
+
 // Read the original manifest file
-const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf-8'));
+const manifest = withoutDevHosts(JSON.parse(fs.readFileSync(MANIFEST, 'utf-8')));
 const { version } = manifest;
 
 // Generate zip filenames

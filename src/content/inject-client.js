@@ -39,9 +39,15 @@
     }
   }
 
+  // dev.gpx.studio (gpx.studio's development deployment) uses the gpx.studio client
+  function getClientHost() {
+    const host = window.location.host;
+    return host === 'dev.gpx.studio' ? 'gpx.studio' : host;
+  }
+
   function injectClientScript(layerPresets, authenticated, manifestVersion) {
     try {
-      const host = window.location.host;
+      const host = getClientHost();
       const path = `src/clients/${host}/index.js`;
       const script = document.createElement('script');
       script.id = 'strava-heatmap-client';
@@ -67,7 +73,7 @@
 
   function injectClientCSS() {
     try {
-      const host = window.location.host;
+      const host = getClientHost();
       const path = `src/clients/${host}/index.css`;
       const href = browser.runtime.getURL(path);
 

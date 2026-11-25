@@ -40,6 +40,9 @@ export async function applyImagery(context, layerPresets, authenticated, version
   // rebuild UI
   if (!context.history().hasRestorableChanges()) {
     await context.ui().restart();
+    // restart() clears keybindings and kicks off an async re-render without
+    // awaiting it; wait for it to finish so our re-bind below isn't racing it
+    await context.ui().ensureLoaded();
   }
 
   // re-toggle selected overlays

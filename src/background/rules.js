@@ -43,7 +43,11 @@ export async function updateHeatmapRules(credentials) {
           browser.runtime.lastError
         );
       } else {
-        console.log('[StravaHeatmapExt] Added heatmap rule.', rule);
+        console.log(
+          '[StravaHeatmapExt] Added heatmap rule.',
+          rule.id,
+          Boolean(credentials)
+        );
       }
     }
   );

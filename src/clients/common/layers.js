@@ -1,12 +1,28 @@
-// Available color schemes for the heatmap
+// Available color schemes for the heatmap (see palettes.js), in the order of
+// Strava's color picker. Blue-Red is no longer offered there, so it comes last.
 const COLORS = {
-  blue: ['🔵', 'Blue'],
-  hot: ['🔥', 'Hot'],
-  gray: ['⚪', 'Gray'],
-  purple: ['🟣', 'Purple'],
-  bluered: ['🔴', 'Blue-Red'],
   orange: ['🟠', 'Orange'],
+  sunset: ['🌅', 'Sunset'],
+  blue: ['🔵', 'Blue'],
+  pink: ['🌸', 'Pink'],
+  purple: ['🟣', 'Purple'],
+  highcontrast: ['⚪', 'Contrast'],
+  bluered: ['🔴', 'Blue-Red'],
 };
+
+// Closest pre-colored legacy tile flavor, for clients that can't colorize
+// grayscale tiles (gpx.studio)
+const LEGACY_COLORS = {
+  blue: 'blue',
+  purple: 'purple',
+  orange: 'orange',
+  sunset: 'hot',
+  pink: 'hot',
+  highcontrast: 'gray',
+  bluered: 'bluered',
+};
+
+const COLOR_PARAM = 'heatmap-color';
 
 const ACTIVITIES = {
   all: 'All Sports',
@@ -39,6 +55,23 @@ const ACTIVITIES = {
   sport_NordicSki: 'Nordic Ski',
   sport_Snowboard: 'Snowboard',
   sport_Snowshoe: 'Snowshoe',
+  sport_Badminton: 'Badminton',
+  sport_Basketball: 'Basketball',
+  sport_Cricket: 'Cricket',
+  sport_Dance: 'Dance',
+  sport_Golf: 'Golf',
+  sport_Handcycle: 'Handcycle',
+  sport_InlineSkate: 'Inline Skate',
+  sport_Padel: 'Padel',
+  sport_PhysicalTherapy: 'Physical Therapy',
+  sport_Pickleball: 'Pickleball',
+  sport_RockClimbing: 'Rock Climb',
+  sport_RollerSki: 'Roller Ski',
+  sport_Skateboard: 'Skateboard',
+  sport_Soccer: 'Football (Soccer)',
+  sport_Tennis: 'Tennis',
+  sport_Volleyball: 'Volleyball',
+  sport_Wheelchair: 'Wheelchair',
 };
 
 const ACTIVITY_GROUPS = {
@@ -71,6 +104,25 @@ const ACTIVITY_GROUPS = {
     'sport_Snowboard',
     'sport_Snowshoe',
   ],
+  'Other Sports': [
+    'sport_Badminton',
+    'sport_Basketball',
+    'sport_Cricket',
+    'sport_Dance',
+    'sport_Golf',
+    'sport_Handcycle',
+    'sport_InlineSkate',
+    'sport_Padel',
+    'sport_PhysicalTherapy',
+    'sport_Pickleball',
+    'sport_RockClimbing',
+    'sport_RollerSki',
+    'sport_Skateboard',
+    'sport_Soccer',
+    'sport_Tennis',
+    'sport_Volleyball',
+    'sport_Wheelchair',
+  ]
 };
 
 export const COLOR_OPTIONS = Object.keys(COLORS).map((key) => [
@@ -96,7 +148,8 @@ function getLayerConfig(
   timestamp,
   authenticated,
   version,
-  short
+  short,
+  legacy
 ) {
   const activityName = ACTIVITIES[activity];
   const [colorEmoji] = COLORS[color] || '❓';
@@ -107,19 +160,44 @@ function getLayerConfig(
       short ? activityName : `Strava Heatmap ${activityName}`
     }`,
     description: `Shows ${activityName.toLowerCase()} aggregated, public Strava activities over the last year in ${colorEmoji} color.`,
-    template: authenticated
-      ? `https://content-a.strava.com/identified/globalheat/${activity}/${color}/{z}/{x}/{y}.png?v=19&t=${timestamp}`
-      : `https://raw.githubusercontent.com/julcnx/strava-heatmap-extension/refs/heads/v${version}/assets/heatmap-fallback.png?v=1&z={z}&x={x}&y={y}`,
+    template: getTileTemplate(activity, color, timestamp, authenticated, version, legacy),
     zoomExtent: authenticated ? [0, 15] : [0, 20],
   };
 }
 
+// Grayscale tiles are colorized client-side; the color param is ignored by Strava
+// and lets the client match tiles to their palette (see www.openstreetmap.org/index.css)
+function getTileTemplate(activity, color, timestamp, authenticated, version, legacy) {
+  if (!authenticated) {
+    return `https://raw.githubusercontent.com/julcnx/strava-heatmap-extension/refs/heads/v${version}/assets/heatmap-fallback.png?v=1&z={z}&x={x}&y={y}`;
+  }
+  if (legacy) {
+    return `https://content-a.strava.com/identified/globalheat/${activity}/${LEGACY_COLORS[color]}/{z}/{x}/{y}.png?v=19&t=${timestamp}`;
+  }
+  return `https://content-a.strava.com/identified/globalheat/${activity}/grayscale/{z}/{x}/{y}.png?v=20&missing=empty&${COLOR_PARAM}=${color}&t=${timestamp}`;
+}
+
 // Generates layer options with optional callback for extension
-export function getLayerConfigs(layerPresets, authenticated, version, short = false) {
+export function getLayerConfigs(
+  layerPresets,
+  authenticated,
+  version,
+  short = false,
+  legacy = false
+) {
   const timestamp = Date.now().toString();
 
   return layerPresets.map(({ activity, color }, index) =>
-    getLayerConfig(index + 1, activity, color, timestamp, authenticated, version, short)
+    getLayerConfig(
+      index + 1,
+      activity,
+      color,
+      timestamp,
+      authenticated,
+      version,
+      short,
+      legacy
+    )
   );
 }
 

@@ -1,6 +1,6 @@
 # Strava Heatmap extension
 
-This browser extension seamlessly integrates the [Strava Global Heatmap](https://www.strava.com/maps/global-heatmap) into popular mapping editors, including the OpenStreetMap [iD editor](https://www.openstreetmap.org/edit?editor=id) and [GPX Studio](https://gpx.studio/app), enhancing your mapping and route analysis capabilities.
+This browser extension seamlessly integrates the [Strava Global Heatmap](https://www.strava.com/maps/global-heatmap) into popular mapping editors, including the OpenStreetMap [iD editor](https://www.openstreetmap.org/edit?editor=id) and [GPX Studio](https://gpx.studio/app), enhancing your mapping and route analysis capabilities. In iD, [Strava Slide](#strava-slide-id) snaps a roughly drawn line onto the heatmap trail.
 
 <img src="./images/screenshot1.png" width="48%"/>&nbsp;<img src="./images/screenshot2.png" width="48%"/>
 
@@ -11,7 +11,7 @@ This browser extension seamlessly integrates the [Strava Global Heatmap](https:/
 If you don’t already have a Strava account, you’ll need to create one (free) to use the Strava Heatmap.
 
 1. Go to https://www.strava.com/register/free
-2. Sign up using Google, Apple, or your email
+2. Sign up using Google, Apple, Facebook, or your email
 
 ## Installation
 
@@ -31,9 +31,13 @@ Open the [Firefox add-on](https://addons.mozilla.org/en-US/firefox/addon/strava-
 
 1. Click `Add to Firefox`.
 2. Confirm permissions by selecting `Add`.
-3. Chrome will briefly display a popup and show the new extension icon in the top-right toolbar.
+3. Firefox will briefly display a popup and show the new extension icon in the top-right toolbar.
 4. Make sure `Pin extension to toolbar` is selected and click `OK`.
 5. Alternatively, right-click the extension icon and choose `Pin` to keep it visible.
+
+### Other browsers
+
+The extension hasn't been tested or fully supported on other Chromium-based browsers like Brave and Opera.
 
 ### Versions
 
@@ -49,17 +53,47 @@ To enable the Strava Heatmap in the iD editor:
 2. Press B or click Background settings, then scroll to Overlays.
 3. Select a Strava Heatmap overlay from the list.
 4. If you see the message "Click the Strava Heatmap extension icon to log into Strava…", click the red extension icon to authenticate.
-5. After logging in, use the green extension icon to configure heatmap layers — choose activity type, color, and manage layer order or deletion.
-6. In the editor, press Shift + Q to toggle the heatmap, and Shift + W to toggle data visibility.
+5. After logging in, use the extension icon to configure heatmap layers: choose activity type and color, and manage layer order or deletion.
+6. In the editor, press Shift + Q to toggle all overlays (including the heatmap), and Shift + W to toggle data visibility.
 
----
+### Strava Slide (iD)
+
+https://github.com/user-attachments/assets/0b53814f-94b8-4ed1-9380-0b048f3b9e37
+
+With a Strava Heatmap overlay switched on and the extension signed in, an existing line can be snapped to the closest trace of that heatmap. Inspired by [Paul Mach's Slide](https://github.com/paulmach/slide/) and [Strava's iD integration](https://github.com/strava/iD).
+
+1. Log into Strava with the extension and enable a Strava heatmap overlay.
+2. Draw a rough line along the trail, or select an existing line. It can start and end on other roads or paths: the line is traced into those junctions.
+3. Press **Shift + S** (also right after drawing), or right-click the selected line and choose **Slide**.
+   To slide only part of a way, select two or more of its points instead.
+4. If several Strava overlays are enabled, choose the activity to follow.
+5. Review the result before saving. Use iD's normal **Undo** to restore the original line.
+
+What Slide changes:
+
+- Junctions with other roads and paths, and the line's free ends, move onto the middle of the heat band too. A road or path ending at the junction follows it; one passing through keeps its course, the junction only sliding along it.
+- Tagged nodes (fords, gates, crossings…), relation members, junctions with anything other than a road or path (a stream, a boundary…), junctions connected to features hidden in iD and the ends of a partly selected way stay in place: to move one, disconnect it or move it by hand first.
+- Where the line meets another road or path, it does not run along it. The heat of other mapped roads and paths is ignored, so a stronger parallel trail does not pull the line onto it.
+- Sections with no usable heatmap trail are left as drawn, and the rest is slid. A message tells you how many.
+- Near-duplicate points, tiny kinks and spikes are removed. Only untagged nodes not used by anything else are ever deleted.
+- Bridges and tunnels themselves are not slid.
+
+#### Known issues
+
+Feedback and test cases are collected in [#43](https://github.com/julcnx/strava-heatmap-extension/issues/43). Always review the result before saving.
+
+- **Parallel trails:** the heat within a few metres of other mapped roads and paths is ignored, and a section that would detour onto another heat trace is left as drawn. A point drawn closer to a stronger trail than to its own can still snap onto it. Workaround: Undo and slide only the sections around it (select two points: the selected end points stay in place), then fix that part by hand. Next step: snap to the closest trail rather than the strongest.
+- **Tight switchbacks:** where the legs of a tight switchback merge into one band of heat, the heat cannot show the tip, so Slide places it from the band's shape, near the end of the band. It can still land a few metres off. Workaround: slide the line up to the switchback and from it (select two points), or move the tip by hand.
+- **"Slide needs too many tiles":** the box around the line must fit in 16 heatmap tiles (about 4 × 4 km, less at high latitudes), so long or diagonal lines are refused. Workaround: select two points and slide the line in sections.
+
+The extension's shortcuts are also listed in iD's keyboard shortcuts panel (**?**).
 
 ### GPX.studio editor
 
 To enable the Strava Heatmap in GPX.studio:
 
 1. Open GPX.studio: https://gpx.studio/app
-2. Hover over the layers menu icon then scroll to Overlays.
+2. Hover over the layers menu icon, then scroll to Overlays.
 3. Choose a Strava Heatmap overlay from the list.
 4. If you see the message "Click the Strava Heatmap extension icon to log into Strava…", click the red extension icon to authenticate.
 5. Once logged in, use the green extension icon to configure, reorder, or delete heatmap layers by activity and color.

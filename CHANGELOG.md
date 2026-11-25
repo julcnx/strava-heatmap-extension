@@ -2,6 +2,67 @@
 
 ## Versions
 
+### `0.15.4` (2026-11-22)
+
+- [iD] Strava Slide follows the centre of the heatmap band much more closely, especially in bends and switchbacks:
+  - Only fixed points stay in place: every other point moves onto the ridge of the raw heat, which the display colors hide on wide bands
+  - Switchback tips reach into the end of the band instead of stopping short. Tip holding and rounding by @ChugachMTB (#49)
+  - No closer to other mapped roads and paths than the line or its drawing already is, so it stays off a stronger neighbouring trail
+  - Fewer points on the line, except at switchback tips
+  - Junctions with other roads and paths, and the line's free ends, move onto the band too: a way ending there follows, one passing through keeps its course. Tagged nodes, relation members and junctions with other features still stay in place
+- [iD] When a line is too long for Strava Slide, the message says to select two of its points and slide it in sections
+
+### `0.15.3` (2026-11-11)
+
+- [gpx.studio] Heatmap uses Strava's current grayscale tiles, colored in the browser like on strava.com, using gpx.studio's new extension API (v2)
+- [gpx.studio] Remembers which heatmap overlays are shown between sessions (#26)
+
+### `0.15.2` (2026-11-03)
+
+- [iD] Strava Slide keeps more of the line's existing points: it moves them onto the trail instead of deleting them and adding new ones nearby
+
+### `0.15.1` (2026-11-02)
+
+- [iD] Fix faint heatmap tracks showing as dark lines in Firefox. By @tjasz (#47)
+- [iD] Blue-red heatmap: faint tracks are now blue instead of dark gray
+- Layer editor: colors follow the order of Strava's color picker, with Blue-Red last
+
+### `0.15.0` (2026-10-26)
+
+- [iD] New **Strava Slide**: press Shift+S, or right-click a line and choose Slide, to snap a roughly drawn line onto the heatmap trail. One Undo restores it. By @rene78 (#43, #45):
+  - Local, dependency-free port inspired by Paul Mach's Slide and Strava's iD integration: traces the heatmap ridge between the line's points, so tight switchbacks are kept
+  - Finds faint trails and lines drawn far from the trail, and handles missing heatmap tiles
+  - Removes duplicate points, keeps tags and connections, and never edits a line changed while Slide was running
+  - Activity picker when several Strava overlays are enabled, progress dialog with cancel, theme-aware icon, and support for Strava's new grayscale tiles
+- [iD] Strava Slide improvements:
+  - The line's ends, junctions, tagged nodes and relation members stay in place
+  - Works on closed lines; sections without a usable heatmap trail are left as drawn instead of failing the whole line
+  - Ignores the heat of other mapped roads and paths next to the line, including the bright edges of wide roads, so a stronger parallel trail does not pull it; tunnels under the line are not, as they have no heat of their own
+  - Avoids running along other roads into a junction, folding back over itself, spikes and near-duplicate points; one Shift+S runs two smoothing passes
+  - Follows the trail's curves, bends and hairpins more closely, adding points to round the turns and dropping needless ones on straight stretches; tight drawn switchbacks the heatmap cannot show are kept as drawn
+  - Leaves parts with no heatmap trail exactly as drawn, and traces the trail into junctions instead of keeping the drawing's approach to them
+  - Shift+S again on a line already on its trail leaves it unchanged
+  - Shift+S works right after drawing a line; Slide sits after Straighten in the edit menu; clearer, colored messages
+  - Downloads the missing OSM data around the line by itself, instead of asking you to pan along it first
+- [iD] Show a one-time notice on mapping responsibly with the Strava heatmap
+- [iD] List the extension's shortcuts (Shift+Q, Shift+W, Shift+S) in iD's keyboard shortcuts panel
+
+### `0.14.0` (2026-10-12)
+
+- [iD] Switch to Strava's new `grayscale` heatmap tiles (`v=20`), colorized in the browser with Strava's exact color palettes (#41)
+- New color palettes matching Strava: Blue, Purple, Orange, Sunset, Pink, Contrast, Blue-Red
+- Saved layers using removed colors are migrated automatically: Hot → Orange, Gray → Contrast
+- [gpx.studio] Keep using the legacy pre-colored tiles for now, new palettes use the closest legacy color
+- Validate Strava credentials against the `grayscale` tiles
+
+### `0.13.8` (2026-09-09)
+
+- Add more sport types to the Other Sports group (Badminton, Basketball, Cricket, Dance, Golf, Handcycle, Inline Skate, Padel, Physical Therapy, Pickleball, Rock Climb, Roller Ski, Skateboard, Football (Soccer), Tennis, Volleyball, Wheelchair)
+
+### `0.13.7` (2026-08-12)
+
+- [iD] Fix Shift+Q / Shift+W overlay shortcuts not re-binding reliably after iD 2.42.0
+
 ### `0.13.6` (2026-02-19)
 
 - Enable missing redirect for strava.com/onboarding
